@@ -39,7 +39,7 @@ Python 3.11 to 3.13. Install the package with the sentence-transformers extra:
 ```bash
 pip install "text2ipc[st]"            # once on PyPI
 # until then, from the repository:
-pip install "text2ipc[st] @ git+https://github.com/jaimenms/study-text-to-ipc"
+pip install "text2ipc[st] @ git+https://github.com/Jaimenms/text2ipc"
 ```
 
 Fetch the index and scheme table (about 230 MB) from the Hub, then classify:

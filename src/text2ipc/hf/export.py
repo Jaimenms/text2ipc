@@ -51,7 +51,7 @@ list of `{{symbol, canonical, level, score, similarity, title, path}}`.
 ## Use it locally
 
 ```bash
-pip install "text2ipc[st] @ git+https://github.com/jaimenms/study-text-to-ipc"
+pip install "text2ipc[st] @ git+https://github.com/Jaimenms/text2ipc"
 t2ipc download {repo_id}
 t2ipc classify "Aparelho para combate a incêndios com mangueira flexível" --lang {lang} --level group
 ```

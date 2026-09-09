@@ -13,7 +13,7 @@ every measurement along the way.
 Use the published Portuguese index (IPC 2026, `intfloat/multilingual-e5-base`):
 
 ```bash
-pip install "text2ipc[st] @ git+https://github.com/jaimenms/study-text-to-ipc"
+pip install "text2ipc[st] @ git+https://github.com/Jaimenms/text2ipc"
 t2ipc download                     # index + scheme from huggingface.co/jaimenms/text2ipc-pt
 t2ipc classify "Aparelho para combate a incêndios com mangueira flexível" --lang PT --level group
 ```

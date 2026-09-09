@@ -31,7 +31,7 @@ dev = ["pytest>=8.3", "ruff>=0.6", "mypy>=1.11"]
 t2ipc = "text2ipc.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/jaimenms/study-text-to-ipc"
+Homepage = "https://github.com/Jaimenms/text2ipc"
 
 [build-system]
 requires = ["hatchling"]
