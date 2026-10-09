@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Export indexes as a static Hugging Face Space (the browser demo) and upload it.
 #
-#   scripts/publish_space.sh --version 20260101            # PT + EN, e5-base, one IPC version, <user>/text2ipc
+#   scripts/publish_space.sh --version 20260101            # PT + EN + FR, e5-base, one IPC version, <user>/text2ipc
 #   scripts/publish_space.sh                               # newest built index per language (may differ)
 #   scripts/publish_space.sh --lang PT --repo jaimenms/text2ipc-demo --private
 #   scripts/publish_space.sh --model st:intfloat/multilingual-e5-small  # 118 MB in the browser, weaker
@@ -23,7 +23,7 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
-[[ ${#LANGS[@]} -gt 0 ]] || LANGS=(PT EN)
+[[ ${#LANGS[@]} -gt 0 ]] || LANGS=(PT EN FR)
 USER_NAME=$(uv run hf auth whoami 2>&1 | sed -n 's/^[Uu]ser=//p' | head -1)
 [[ -n "$USER_NAME" ]] || { echo "not logged in: run 'uv run hf auth login'" >&2; exit 1; }
 REPO=${REPO:-$USER_NAME/text2ipc}

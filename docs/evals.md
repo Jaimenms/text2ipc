@@ -350,3 +350,18 @@ Equal within noise at @1, a point or two behind at @3 and @10, at half the size 
 in a format a browser runs: the Space ships jina in 8 bits as an opt-in second stage.
 The package keeps bge-reranker-v2-m3 as its default (its PyTorch code loads with the
 current transformers; jina's remote code does not).
+
+## French scheme (e5-base, IPC 20260101, 1,000-case PT sample, defaults)
+
+The French index was built on 2026-10-09 from WIPO's FR master file. There are no
+French evals yet, so this only measures the three schemes on the Portuguese cases:
+the French scheme is the worst match for Portuguese text, as expected when neither
+side is English for the embedder. For French text the French scheme is the one to
+use; measuring that needs a French eval source (INPI France's or the EPO's
+publications with their IPC symbols).
+
+| scheme | subclass @1 / @10 | group @1 / @10 | subgroup @1 / @10 |
+|---|---|---|---|
+| PT (INPI titles) | 23.6 / 41.7 | 11.2 / 25.0 | 2.4 / 6.7 |
+| EN (WIPO) | 22.0 / 37.8 | 11.2 / 23.1 | 2.7 / 6.5 |
+| FR (WIPO) | 14.3 / 31.6 | 7.9 / 18.8 | 2.0 / 4.9 |

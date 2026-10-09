@@ -10,6 +10,13 @@ reverse have their own record under `docs/adr/`; every measurement is in
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-09
+
+### Added
+- French scheme index (IPC 20260101, e5-base), published as `jaimenms/text2ipc-fr`
+  and added to the Space as a third scheme. WIPO's master files cover EN and FR; any
+  other language is an overlay (ADR 0003).
+
 ## [0.2.2] - 2026-10-09
 
 ### Fixed
@@ -124,7 +131,8 @@ reverse have their own record under `docs/adr/`; every measurement is in
   Ollama, and a hash embedder for tests.
 - Study notebook and documentation: usage, methodology, eval log, ADRs.
 
-[Unreleased]: https://github.com/Jaimenms/text2ipc/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/Jaimenms/text2ipc/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/Jaimenms/text2ipc/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Jaimenms/text2ipc/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Jaimenms/text2ipc/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Jaimenms/text2ipc/compare/v0.1.0...v0.2.0

@@ -9,7 +9,7 @@ or build your own index.
 [huggingface.co/spaces/jaimenms/text2ipc](https://huggingface.co/spaces/jaimenms/text2ipc)
 is a static page: it downloads the quantised embedder (`Xenova/multilingual-e5-base`,
 279 MB) and the IPC index (about 70 MB per language) once, then embeds and scores in
-the browser. Nothing is sent to a server. Pick the scheme language (PT or EN), the
+the browser. Nothing is sent to a server. Pick the scheme language (PT, EN or FR), the
 level (`auto`, section ... subgroup) and how many results; `?q=...&lang=PT&level=group`
 in the URL pre-fills and runs a query. The results are drawn as one tree, their paths
 merged under a root node: nodes are the symbol parts (IPC › A › 62 › C › 25/00 › 25/01), each edge carries the
@@ -161,8 +161,8 @@ numbers and their history are in `docs/evals.md`.
 
 ```bash
 scripts/publish_hf.sh --lang PT                # endpoint repo: export + upload to <you>/text2ipc-pt
-scripts/publish_hf.sh --lang EN --public       # another language, public repo
-scripts/publish_space.sh --version 20260101    # browser demo: PT + EN, e5-base, <you>/text2ipc
+scripts/publish_hf.sh --lang FR --public       # another language: <you>/text2ipc-fr
+scripts/publish_space.sh --version 20260101    # browser demo: PT + EN + FR, e5-base, <you>/text2ipc
 scripts/publish_space.sh --lang PT --private   # one language, private Space
 ```
 
@@ -172,8 +172,8 @@ model for every language it ships (e5-base by default: `t2ipc build --lang PT`);
 pass `--model` to ship another embedder that has an ONNX twin on the Hub, for example
 e5-small at 118 MB in the browser.
 
-**Versions.** The repository names stay fixed (`text2ipc-pt` for the endpoint repo,
-`text2ipc` for the Space); every upload is tagged `v<package version>` on the Hub by
+**Versions.** The repository names stay fixed (`text2ipc-<lang>` for the endpoint
+repos, `text2ipc-pt` and `text2ipc-fr` today, `text2ipc` for the Space); every upload is tagged `v<package version>` on the Hub by
 `scripts/hf_tag.sh` (`v0.2.1`, then `v0.2.1-2` for a second upload of the same
 version), so an edition can be pinned: `t2ipc download --revision v0.2.1`, or the
 `revision` of a Hub request. A release moves the `[Unreleased]` entries of
