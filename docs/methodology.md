@@ -144,8 +144,16 @@ into JSONL cases; `t2ipc eval` reports hit@k at every level, hit@1 on the office
 symbol, and MRR. Multi-label gold sets count a hit if any gold symbol is found.
 
 Recent XML issues (2905, 2026-09-08) carry titles only; older text issues (2100,
-2011) carry abstracts. Both are in `evals/`. Current numbers are in `docs/evals.md`:
-with the default model, the correct subclass is first about one time in five and
-within the top ten about two times in five. The model, not the hierarchy heuristics,
-is the limiting factor; a stronger multilingual embedder or an LLM rerank over the
-surviving candidates is the obvious next step.
+2011) carry abstracts. Both are in `evals/`. Besides the two standard files, the
+notebooks and the sweeps use a fixed sample of 1,000 cases drawn from all 29 issues
+(`load_many(..., sample=1000, seed=0)`, half with abstracts). The eval text is the
+abstract when the issue printed one, else the title.
+
+Current numbers are in `docs/evals.md`. With e5-base on the Portuguese scheme the
+office's subclass is first about one time in four and within the top ten about two
+times in five; the cross-encoder second stage takes rank 1 to about one time in
+three. The first stage, not the hierarchy heuristics, is the limiting factor: with 50
+candidates the subclass is present 64% of the time. For the second stage,
+`text2ipc.eval.judge_candidates` runs the reranker once per case and
+`fusion_results` evaluates every fusion rule from that run, so comparing fusions
+costs one judged pass (notebook 02).

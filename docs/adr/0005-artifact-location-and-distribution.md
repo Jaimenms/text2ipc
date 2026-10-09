@@ -1,6 +1,6 @@
 # 0005 Where indexes live, and how they reach users
 
-Status: accepted, 2026-09-09
+Status: accepted, 2026-09-09; amended 2026-10-09 (version tags, see the end)
 
 ## Context
 
@@ -42,3 +42,19 @@ artefacts next to the code are easier to see, measure and delete.
   compatible "retriever" packaging is not needed for the CSV to be usable.
 - Anyone republishing must rerun `t2ipc manifest`; a stale manifest fails checksum
   verification on download rather than silently loading the wrong file.
+
+## Amendment, 2026-10-09: names stay, versions are tags
+
+The CSV and manifest details above were superseded by ADR 0006 (Parquet tables; the
+manifest and its checksums are gone). What stays is the channel. Two rules were added
+when the package reached 0.2.0:
+
+- **Repository names are fixed.** The endpoint repository stays `jaimenms/text2ipc-pt`
+  and the browser demo stays `spaces/jaimenms/text2ipc`; a new model or index does not
+  get a new repository.
+- **Every upload is a tagged revision.** `scripts/hf_tag.sh` tags the uploaded commit
+  `v<package version>`, with `-2`, `-3` suffixes for further uploads of the same
+  version; git carries the same tags. Users pin an edition with
+  `t2ipc download --revision v0.2.1` or the `revision` of a Hub request, and the
+  model card states which package version it vendors. `CHANGELOG.md` records what
+  changed per version.

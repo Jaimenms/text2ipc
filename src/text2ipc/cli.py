@@ -350,7 +350,7 @@ def web_export(
     web_dtype: str = typer.Option("q8", help="ONNX weights the browser loads: q8, fp16, fp32"),
     repo_id: str = typer.Option(None, help="Space id written into the README"),
     examples: Path = typer.Option(
-        None, help="JSONL of eval cases (title + abstract + office IPC) shown as examples"
+        None, help="JSONL of eval cases; their title + abstract become the example texts"
     ),
     web_reranker: str = typer.Option(
         WEB_DEFAULT_RERANKER,

@@ -33,7 +33,6 @@ const ui = {
   legend: $("legend"),
   tip: $("tip"),
   results: $("results"),
-  gold: $("gold"),
   examples: $("examples"),
   meta: $("meta"),
 };
@@ -41,8 +40,7 @@ const ui = {
 
 const state = {
   manifest: null,
-  examples: [], // real applications from the evals: title, abstract, office IPC
-  gold: null, // the example whose text is in the box, if unchanged
+  examples: [], // sample texts: title and abstract of real applications
   indexes: new Map(), // lang -> built index
   indexLoads: new Map(), // lang -> promise of the load in flight (clicks during loading reuse it)
   embedder: null,
@@ -54,21 +52,6 @@ const state = {
   pending: 0, // loads in flight that have not reported progress yet
   error: null,
 };
-
-const LEVEL_LEN = { section: 1, class: 3, subclass: 4 };
-
-/** Canonical symbol cut to a level, as text2ipc.eval.harness.truncate does. */
-function truncateSymbol(symbol, level) {
-  if (level in LEVEL_LEN) return symbol.slice(0, LEVEL_LEN[level]);
-  if (level === "group") return symbol.length === 14 ? symbol.slice(0, 8) + "000000" : symbol;
-  return symbol;
-}
-
-/** Does a result agree with an office-assigned symbol at the result's own level? */
-function agreesWithGold(m) {
-  if (!state.gold) return false;
-  return state.gold.ipc.some((g) => truncateSymbol(g, m.level) === truncateSymbol(m.symbol, m.level));
-}
 
 function exampleText(ex) {
   return `${ex.title}\n\n${ex.abstract}`;
@@ -323,7 +306,6 @@ async function classify() {
 async function classifyOnce() {
   const text = normalizeQuery(ui.text.value || "");
   if (!text) return;
-  if (state.gold && (ui.text.value || "").trim() !== exampleText(state.gold).trim()) state.gold = null;
   try {
     const entry = entryFor(ui.lang.value);
     const [index] = await Promise.all([loadIndex(entry), loadEmbedder()]);
@@ -345,7 +327,6 @@ async function classifyOnce() {
     }
     renderGraph(index, matches, sims, entry);
     renderResults(matches, rerank);
-    renderGold(matches);
     ui.meta.textContent =
       `IPC ${entry.version} ${entry.lang} · ${entry.rows.toLocaleString()} entries · ` +
       `${state.manifest.web_model} ${state.manifest.web_dtype} · ` +
@@ -390,14 +371,6 @@ function renderResults(matches, reranked = false) {
       if (j === cells.length - 1) td.className = "path";
       tr.appendChild(td);
     });
-    if (agreesWithGold(m)) {
-      tr.className = "gold";
-      const tick = document.createElement("span");
-      tick.className = "tick";
-      tick.textContent = " ✓";
-      tick.title = "Agrees with the symbol INPI assigned, at this level";
-      tr.children[1].appendChild(tick);
-    }
     body.appendChild(tr);
   });
   table.appendChild(body);
@@ -535,8 +508,7 @@ function renderGraph(index, matches, sims, entry) {
       svgEl("text", { x: n.w / 2, y: G.nodeH / 2 + 4, "text-anchor": "middle" }, n.label),
     );
     if (isResult) {
-      const badge = `#${n.rank}${agreesWithGold(n.match) ? " ✓" : ""}`;
-      g.append(svgEl("text", { class: "badge", x: n.w + 8, y: G.nodeH / 2 + 4 }, badge));
+      g.append(svgEl("text", { class: "badge", x: n.w + 8, y: G.nodeH / 2 + 4 }, `#${n.rank}`));
     }
     const info = tipInfo(index, n, sims, entry);
     g.setAttribute("aria-label", info.aria);
@@ -639,21 +611,6 @@ function hideTip() {
   ui.tip.hidden = true;
 }
 
-function renderGold(matches) {
-  ui.gold.innerHTML = "";
-  if (!state.gold) return;
-  const g = state.gold;
-  const hits = matches.filter(agreesWithGold).length;
-  const strong = document.createElement("strong");
-  strong.textContent = `INPI assigned: ${g.ipc.map(formatSymbol).join(", ")}`;
-  ui.gold.appendChild(strong);
-  ui.gold.appendChild(
-    document.createTextNode(
-      ` (${g.source}). ${hits ? `${hits} of ${matches.length} results agree at their level (✓).` : "No result agrees at its level."}`,
-    ),
-  );
-}
-
 function updateUrl(text, lang) {
   const params = new URLSearchParams({ lang, level: ui.level.value, q: text });
   history.replaceState(null, "", `?${params}`);
@@ -687,10 +644,9 @@ function renderExamples() {
     b.type = "button";
     b.className = "chip";
     b.textContent = ex.title.length > 56 ? `${ex.title.slice(0, 56)}…` : ex.title;
-    b.title = `${ex.abstract.slice(0, 160)}…  INPI: ${ex.ipc.map(formatSymbol).join(", ")}`;
+    b.title = `${ex.abstract.slice(0, 160)}…`;
     b.addEventListener("click", () => {
       ui.text.value = exampleText(ex); // filled in only; Classify runs it
-      state.gold = ex;
       ui.text.focus();
     });
     ui.examples.appendChild(b);

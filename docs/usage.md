@@ -22,10 +22,10 @@ in a Web Worker with a progress bar, about a second per candidate, and adds a Ju
 column. Nothing runs by itself: the example buttons and a `?q=` link only fill the
 text box. That model is licensed CC BY-NC 4.0
 (non-commercial), which suits a demo; the package's default reranker
-(`BAAI/bge-reranker-v2-m3`) is Apache-2.0. The example buttons are real
-applications from `evals/demo_examples.jsonl` (title plus abstract, with the symbols
-INPI assigned); they were chosen so that the top group on the PT scheme agrees with
-INPI, and results that agree at their level are marked ✓. Results differ slightly from the package: the
+(`BAAI/bge-reranker-v2-m3`) is Apache-2.0. The example buttons fill the box
+with the title and abstract of real applications (`evals/demo_examples.jsonl`);
+the page never compares its results with an office's decision, that is what the
+evals are for. Results differ slightly from the package: the
 vectors are int8 and the model is 8-bit (ADR 0007, numbers in `docs/evals.md`).
 
 ## 2. Hosted: Hugging Face Inference Endpoint
@@ -133,7 +133,7 @@ h({"inputs": "...", "parameters": {"level": "group", "top_k": 5}})
 ```bash
 uv sync --all-extras
 uv run t2ipc versions                       # IPC versions published by WIPO
-uv run t2ipc build --version 20260101 --lang PT     # Portuguese titles from INPI (~3 min with e5-small)
+uv run t2ipc build --version 20260101 --lang PT     # Portuguese titles from INPI (~10 min with e5-base, the default)
 uv run t2ipc build --version 20260101 --lang EN --model st:intfloat/multilingual-e5-small
 uv run t2ipc build --version 20270101 --lang PT     # reuses unchanged vectors from 20260101
 ```
@@ -152,14 +152,16 @@ uv run t2ipc eval evals/rpi_2905.jsonl --lang PT --level subgroup --show-misses 
 ```
 
 `notebooks/01_text2ipc.ipynb` walks through all of the above and reports accuracy on
-1,000 INPI applications. Current numbers and their history are in `docs/evals.md`.
+1,000 INPI applications; `notebooks/02_rerank.ipynb` does the same for the second
+stage (`--rerank`), with one judged run evaluated under every fusion rule. Current
+numbers and their history are in `docs/evals.md`.
 
 ## 6. Publish
 
 ```bash
 scripts/publish_hf.sh --lang PT                # endpoint repo: export + upload to <you>/text2ipc-pt
 scripts/publish_hf.sh --lang EN --public       # another language, public repo
-scripts/publish_space.sh                       # browser demo: PT + EN, e5-small, <you>/text2ipc
+scripts/publish_space.sh --version 20260101    # browser demo: PT + EN, e5-base, <you>/text2ipc
 scripts/publish_space.sh --lang PT --private   # one language, private Space
 ```
 
@@ -168,3 +170,11 @@ The Space script runs `t2ipc web-export`, which needs an index built with the sa
 model for every language it ships (e5-base by default: `t2ipc build --lang PT`);
 pass `--model` to ship another embedder that has an ONNX twin on the Hub, for example
 e5-small at 118 MB in the browser.
+
+**Versions.** The repository names stay fixed (`text2ipc-pt` for the endpoint repo,
+`text2ipc` for the Space); every upload is tagged `v<package version>` on the Hub by
+`scripts/hf_tag.sh` (`v0.2.1`, then `v0.2.1-2` for a second upload of the same
+version), so an edition can be pinned: `t2ipc download --revision v0.2.1`, or the
+`revision` of a Hub request. A release moves the `[Unreleased]` entries of
+`CHANGELOG.md` under a version, bumps `pyproject.toml` and `__version__`, tags git and
+publishes both repositories.

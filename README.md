@@ -49,6 +49,7 @@ repository [jaimenms/text2ipc-pt](https://huggingface.co/jaimenms/text2ipc-pt).
 | [docs/evals.md](docs/evals.md) | What it scores: every eval run with its numbers, including the experiments that were rejected |
 | [docs/adr/](docs/adr/) | Why it is built this way: one record per decision that is expensive to reverse (path text, Parquet tables, languages, eval source, distribution) |
 | [notebooks/01_text2ipc.ipynb](notebooks/01_text2ipc.ipynb) | Walk-through of the interface and an evaluation on 1,000 INPI applications, with outputs |
+| [notebooks/02_rerank.ipynb](notebooks/02_rerank.ipynb) | The second stage: cross-encoder verdicts, fusion rules, one judged run evaluated several ways |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each version, with the measurements behind it |
 | [CLAUDE.md](CLAUDE.md) | Conventions for contributors and coding agents |
 
@@ -97,7 +98,7 @@ repository [jaimenms/text2ipc-pt](https://huggingface.co/jaimenms/text2ipc-pt).
 │   ├── publish_space.sh          export + upload the browser demo (static Space)
 │   ├── make_notebooks.py         generates notebooks/ (edit this, not the .ipynb)
 │   └── build_index.py            thin wrapper over `t2ipc build`
-├── notebooks/01_text2ipc.ipynb   executed study notebook
+├── notebooks/                    executed study notebooks: 01 interface + eval, 02 reranker
 ├── evals/rpi_<issue>.jsonl       29 INPI issues, ~12k applications with their IPC symbols
 ├── tests/                        46 tests; no network, no real model (hash embedder + fixtures);
 │                                 js_parity.mjs runs scorer.js under Node against the Python scorer
@@ -112,7 +113,7 @@ uv sync --all-extras
 uv run t2ipc build --version 20260101 --lang PT      # ~3 min with e5-small, ~10 with e5-base
 uv run t2ipc eval evals/rpi_2905.jsonl --lang PT --level subgroup
 uv run pytest && uv run ruff check . && uv run ruff format .
-uv run python scripts/make_notebooks.py && uv run jupyter nbconvert --to notebook --execute --inplace notebooks/01_text2ipc.ipynb
+uv run python scripts/make_notebooks.py && uv run jupyter nbconvert --to notebook --execute --inplace notebooks/0*.ipynb
 scripts/publish_hf.sh --lang PT                      # endpoint repo on the Hub
 scripts/publish_space.sh                             # browser demo (static Space)
 ```

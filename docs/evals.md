@@ -1,9 +1,23 @@
 # Eval log
 
-Cases: `evals/rpi_2905.jsonl`, 578 Portuguese titles (no abstracts) from RPI issue
-2905 (2026-09-08), dispatches 1.3 and 3.1, gold = every IPC symbol printed by INPI.
-Index: IPC 20260101, English scheme. Metric: hit@k if any gold symbol truncated to the
-level appears in the top-k predictions truncated to that level.
+A log in chronological order: every run is kept, including the ones that were
+rejected, so a section describes the setup of its day. The first sections used the
+English scheme and e5-small; from "Text style and scheme language" on, the Portuguese
+scheme; from "Path weight set to 0" on, the current defaults.
+
+**State on 2026-10-09** (e5-base, PT scheme, path weight 0, paragraphs averaged):
+subclass@1 23.2% and @10 38.4% on the 2100 abstracts, 29.4% and 45.7% on the 2905
+titles; with the cross-encoder second stage, subclass@1 31.6% and group@1 16.6% on
+the 1,000-case sample. The sections are: case files, query normalisation, beam and
+weights, baselines, the 1,000-case sample, model comparison, text style and scheme
+language, int8 vectors for the browser, auto level, path weight, candidate recall,
+combining the parts of an application, cross-encoder reranking.
+
+Cases of the first sections: `evals/rpi_2905.jsonl`, 578 Portuguese titles (no
+abstracts) from RPI issue 2905 (2026-09-08), dispatches 1.3 and 3.1, gold = every IPC
+symbol printed by INPI. Index: IPC 20260101, English scheme. Metric: hit@k if any
+gold symbol truncated to the level appears in the top-k predictions truncated to
+that level.
 
 ## Case files
 

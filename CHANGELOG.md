@@ -10,6 +10,24 @@ reverse have their own record under `docs/adr/`; every measurement is in
 
 ## [Unreleased]
 
+### Added
+- `notebooks/02_rerank.ipynb`: the second stage step by step, with one application
+  before and after, the judge's verdicts, and one judged run evaluated under every
+  fusion rule (`text2ipc.eval.judge_candidates` and `fusion_results`).
+
+### Removed
+- Browser demo: no comparison with the office's symbols. The "INPI assigned" line,
+  the ✓ marks and the symbols shipped with the examples are gone; the example
+  buttons only fill the box with a title and an abstract. Evals stay in validation.
+
+### Changed
+- Notebook 01 describes the current scoring (cosine by default, paragraphs averaged)
+  and points at notebook 02 instead of listing the reranker as future work.
+- Docs: the methodology's evaluation section states the current numbers and the
+  second-stage eval helpers; the usage guide covers both notebooks and the version
+  tags; the eval log opens with the state on 2026-10-09 and a map of its sections;
+  ADR 0005 is amended with the fixed repository names and the tagging rule.
+
 ## [0.2.1] - 2026-10-09
 
 ### Changed

@@ -74,8 +74,8 @@ class SentenceTransformerEmbedder:
 
     def count_tokens(self, text: str) -> int:
         ids = self._model.tokenizer(
-            self._query_prefix + text, add_special_tokens=True, truncation=False
-        )["input_ids"]
+            self._query_prefix + text, add_special_tokens=True, truncation=False, verbose=False
+        )["input_ids"]  # verbose=False: counting past the limit is the point, no warning
         return len(ids)
 
     def embed_passages_raw(self, texts: Sequence[str]) -> np.ndarray:

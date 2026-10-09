@@ -51,11 +51,6 @@
   td.symbol { font-family: var(--mono); white-space: nowrap; }
   td.path { color: var(--fg); }
   #meta { color: var(--muted); font-size: .85rem; margin-top: 8px; }
-  .gold-line { color: var(--muted); font-size: .9rem; margin-top: 10px; }
-  .gold-line:empty { display: none; }
-  .gold-line strong { color: var(--fg); }
-  tr.gold td.symbol { font-weight: 600; }
-  .tick { color: var(--accent); font-weight: 700; }
   /* graph */
   #graph { overflow: auto; margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; }
   #graph:empty { display: none; }
@@ -115,9 +110,8 @@
   <div id="graph"></div>
   <p id="legend" class="legend" hidden>Each result's path, merged into one tree: IPC › section › class › subclass › group › subgroups.
     <i class="thin"></i>similarity of that entry to the text &nbsp; <i class="thick"></i>edge into a result, labelled with its score.
-    Hover or focus an edge or a node for the entry's title. ✓ marks a result that agrees with INPI's symbol for an example.
+    Hover or focus an edge or a node for the entry's title.
     With Rerank, a cross-encoder re-judges the top candidates and the score becomes cosine × (0.5 + 0.5 × judge).</p>
-  <div id="gold" class="gold-line"></div>
   <div id="results"></div>
   <div id="meta"></div>
   <div id="tip" hidden></div>

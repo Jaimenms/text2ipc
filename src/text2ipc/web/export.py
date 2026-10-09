@@ -152,8 +152,8 @@ def export_web_demo(
     """Write the static Space into ``out``; one index per language, all on ``model``.
 
     ``version`` is resolved per language against the indexes built for ``model``.
-    ``examples`` is a JSONL of eval cases (``t2ipc rpi`` format) shown as clickable
-    examples, with the office-assigned symbols so the page can mark agreeing results.
+    ``examples`` is a JSONL of eval cases (``t2ipc rpi`` format); only their title and
+    abstract are shipped, as sample texts the page offers to fill the box with.
     """
     from ..classifier import resolve_built_version
     from ..embeddings.base import model_slug
@@ -249,7 +249,7 @@ def export_web_demo(
 
 
 def load_examples(path: Path) -> list[dict]:
-    """Eval cases with a title and an abstract, as the page shows them."""
+    """Title and abstract of each case; nothing else reaches the page."""
     out = []
     for line in Path(path).read_text(encoding="utf-8").splitlines():
         if not line.strip():
@@ -257,15 +257,7 @@ def load_examples(path: Path) -> list[dict]:
         c = json.loads(line)
         if not (c.get("title") and c.get("abstract")):
             raise ValueError(f"example {c.get('id')} needs both a title and an abstract")
-        out.append(
-            {
-                "id": c["id"],
-                "title": c["title"],
-                "abstract": c["abstract"],
-                "ipc": list(c["ipc"]),
-                "source": c.get("source") or "",
-            }
-        )
+        out.append({"title": c["title"], "abstract": c["abstract"]})
     return out
 
 
