@@ -1,10 +1,24 @@
-"""sentence-transformers CrossEncoder backend (``pip install text2ipc[st]``)."""
+"""sentence-transformers CrossEncoder backend (``pip install text2ipc[st]``).
+
+The CrossEncoder API was renamed in sentence-transformers 4.0 (``automodel_args`` to
+``model_kwargs``, ``activation_fct`` to ``activation_fn``); both generations are
+supported by reading the installed signatures once.
+"""
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Sequence
 
 import numpy as np
+
+
+def _pick(signature: inspect.Signature, *names: str) -> str | None:
+    """The first of ``names`` the callable accepts, or None."""
+    params = signature.parameters
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return names[0]
+    return next((n for n in names if n in params), None)
 
 
 class CrossEncoderReranker:
@@ -33,9 +47,18 @@ class CrossEncoderReranker:
         self._model_name = model
         self._batch_size = batch_size
         self._identity = torch.nn.Identity()
-        self._model = CrossEncoder(
-            model, device=device, max_length=max_length, model_kwargs={"torch_dtype": dtype}
+
+        init_kw = _pick(inspect.signature(CrossEncoder.__init__), "model_kwargs", "automodel_args")
+        self._activation_kw = _pick(
+            inspect.signature(CrossEncoder.predict), "activation_fn", "activation_fct"
         )
+        if init_kw is None or self._activation_kw is None:
+            raise ImportError(
+                "This sentence-transformers version has an unknown CrossEncoder API; "
+                "install sentence-transformers>=3.0"
+            )
+        kwargs = {"device": device, "max_length": max_length, init_kw: {"torch_dtype": dtype}}
+        self._model = CrossEncoder(model, **kwargs)
 
     @property
     def name(self) -> str:
@@ -47,8 +70,8 @@ class CrossEncoderReranker:
         out = self._model.predict(
             [(query, t) for t in texts],
             batch_size=self._batch_size,
-            activation_fn=self._identity,
             show_progress_bar=False,
             convert_to_numpy=True,
+            **{self._activation_kw: self._identity},  # raw logits, not the default sigmoid
         )
         return np.asarray(out, dtype=np.float32).reshape(-1)

@@ -10,6 +10,14 @@ reverse have their own record under `docs/adr/`; every measurement is in
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-09
+
+### Fixed
+- `rerank=True` failed with `TypeError: unexpected keyword argument 'model_kwargs'`
+  on sentence-transformers 3.x, whose CrossEncoder still used `automodel_args` and
+  `activation_fct`. The backend now reads the installed signatures and works with
+  3.x and with 4.0 or later (tested with 3.4.1 and 6.0.1).
+
 ### Added
 - `notebooks/02_rerank.ipynb`: the second stage step by step, with one application
   before and after, the judge's verdicts, and one judged run evaluated under every
@@ -116,7 +124,8 @@ reverse have their own record under `docs/adr/`; every measurement is in
   Ollama, and a hash embedder for tests.
 - Study notebook and documentation: usage, methodology, eval log, ADRs.
 
-[Unreleased]: https://github.com/Jaimenms/text2ipc/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Jaimenms/text2ipc/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/Jaimenms/text2ipc/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Jaimenms/text2ipc/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Jaimenms/text2ipc/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Jaimenms/text2ipc/releases/tag/v0.1.0

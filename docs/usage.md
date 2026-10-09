@@ -61,7 +61,8 @@ a reranker spec), `candidates`, `fusion`. Each result has `symbol`, `canonical`,
 
 ## 3. Local, with a prebuilt index
 
-Python 3.11 to 3.13. Install the package with the sentence-transformers extra:
+Python 3.11 to 3.13; sentence-transformers 3.0 or later (the reranker is tested with
+3.4.1 and 6.0.1). Install the package with the sentence-transformers extra:
 
 ```bash
 pip install "text2ipc[st]"            # once on PyPI

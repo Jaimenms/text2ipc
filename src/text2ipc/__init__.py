@@ -10,4 +10,4 @@ from .config import LEVELS
 from .search import Beam, Match, SearchParams, Weights
 
 __all__ = ["LEVELS", "Beam", "IpcClassifier", "Match", "SearchParams", "Weights", "classify"]
-__version__ = "0.2.1"
+__version__ = "0.2.2"

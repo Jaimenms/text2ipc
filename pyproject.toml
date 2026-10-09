@@ -1,6 +1,6 @@
 [project]
 name = "text2ipc"
-version = "0.2.1"
+version = "0.2.2"
 description = "Map free text such as patent abstracts to IPC symbols with embeddings and hierarchical heuristics"
 readme = "README.md"
 license = "MIT"
