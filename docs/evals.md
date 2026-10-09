@@ -173,3 +173,37 @@ The Portuguese scheme lifts e5-small by 8 points at subclass@1 on titles (12.3 t
 20.6), more than it lifts e5-base (22.8 to 27.7): the smaller model gains most from
 not having to cross languages. e5-small + PT scheme roughly matches e5-base + EN
 scheme at a third of the index size.
+
+## Browser demo: int8 vectors (e5-small, IPC 20260101, 1,000-case sample, `--level subgroup --top-k 10`)
+
+The static Space (ADR 0007) ships each vector as int8 with a per-row float32 scale,
+a quarter of the size. Same 1,000 random cases as notebook 01 (seed 0, 500 abstracts
+and 500 titles), same query vectors, index vectors swapped for their dequantised int8
+form. Run on 2026-10-08.
+
+| scheme | vectors | section @1 | class @1 | subclass @1 / @10 | group @1 / @10 | mrr subclass |
+|---|---|---|---|---|---|---|
+| PT | fp32 | 50.4 | 27.5 | 17.0 / 28.7 | 6.9 / 13.7 | 0.217 |
+| PT | int8 | 49.8 | 27.2 | 16.6 / 28.7 | 6.8 / 13.8 | 0.215 |
+| EN | fp32 | 38.7 | 21.9 | 12.0 / 25.0 | 5.0 / 12.1 | 0.172 |
+| EN | int8 | 38.6 | 22.0 | 12.1 / 24.7 | 5.0 / 12.0 | 0.172 |
+
+Differences of at most 0.4 points in either direction: quantising the vectors is
+free. The browser also runs the q8 ONNX embedder instead of the fp32 PyTorch one;
+that effect was not measured over the eval set, only checked on a handful of queries
+(same top symbols, similarities within 0.01).
+
+### Same measurement for e5-base (the model the Space ships since 2026-10-08)
+
+| scheme | vectors | section @1 | class @1 | subclass @1 / @10 | group @1 / @10 | mrr subclass |
+|---|---|---|---|---|---|---|
+| PT | fp32 | 56.8 | 34.0 | 20.9 / 35.8 | 10.0 / 21.3 | 0.271 |
+| PT | int8 | 56.8 | 34.2 | 21.4 / 36.4 | 10.1 / 21.8 | 0.276 |
+| EN | fp32 | 53.5 | 33.9 | 19.5 / 34.9 | 9.7 / 20.3 | 0.257 |
+| EN | int8 | 54.0 | 34.0 | 19.3 / 34.3 | 9.5 / 20.3 | 0.254 |
+
+Again within noise (at most 0.9 points, both directions). The q8 ONNX e5-base in the
+browser sits further from the PyTorch fp32 vectors than e5-small did (cosine 0.983 to
+0.994 against 0.996 to 0.998 on six probe texts), enough to swap near-tied neighbours
+such as the 2nd and 3rd result of the fire-hose example; the top result was the same
+on every probe.

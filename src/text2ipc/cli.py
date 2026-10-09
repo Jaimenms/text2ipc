@@ -29,6 +29,7 @@ from .scheme import (
     parse_scheme,
 )
 from .versions import list_local_versions, list_remote_versions, resolve_version
+from .web.export import WEB_DEFAULT_MODEL
 
 app = typer.Typer(help="Map free text to IPC symbols.", no_args_is_help=True)
 console = Console()
@@ -300,6 +301,38 @@ def hf_export(
     )
     console.print(f"HF repo assembled at {path}")
     console.print(f"publish with: huggingface-cli upload <user>/<repo> {path} . --repo-type model")
+
+
+@app.command("web-export")
+def web_export(
+    out: Path = typer.Argument(..., help="Directory to create (becomes a static HF Space)"),
+    version: str = typer.Option("latest", help="Resolved per language among built indexes"),
+    lang: list[str] = typer.Option(["PT"], help="Scheme language; repeat for several"),
+    model: str = typer.Option(
+        None, help=f"Embedder the indexes were built with (default {WEB_DEFAULT_MODEL})"
+    ),
+    web_model: str = typer.Option(None, help="transformers.js model id (default: Xenova twin)"),
+    web_dtype: str = typer.Option("q8", help="ONNX weights the browser loads: q8, fp16, fp32"),
+    repo_id: str = typer.Option(None, help="Space id written into the README"),
+):
+    """Assemble a static Hugging Face Space that classifies in the browser (ADR 0007)."""
+    from .web import export_web_demo
+
+    path = export_web_demo(
+        out,
+        model=model or WEB_DEFAULT_MODEL,
+        langs=[lg.upper() for lg in lang],
+        version=version,
+        repo_id=repo_id or "<user>/text2ipc",
+        web_model=web_model,
+        web_dtype=web_dtype,
+    )
+    total = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+    console.print(f"static Space assembled at {path} ({total / 1e6:.0f} MB)")
+    console.print(
+        f"publish with: scripts/publish_space.sh "
+        f"(or hf upload <user>/<space> {path} . --repo-type space)"
+    )
 
 
 @app.command("migrate-csv")

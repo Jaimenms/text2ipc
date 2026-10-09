@@ -1,9 +1,24 @@
 # Using text2ipc
 
-Three ways to get an IPC suggestion for a text, from lightest to heaviest: call the
-hosted endpoint, run the package locally with a prebuilt index, or build your own index.
+Four ways to get an IPC suggestion for a text, from lightest to heaviest: open the
+browser demo, call the hosted endpoint, run the package locally with a prebuilt index,
+or build your own index.
 
-## 1. Hosted: Hugging Face Inference Endpoint
+## 1. In the browser: Hugging Face Space
+
+[huggingface.co/spaces/jaimenms/text2ipc](https://huggingface.co/spaces/jaimenms/text2ipc)
+is a static page: it downloads the quantised embedder (`Xenova/multilingual-e5-base`,
+279 MB) and the IPC index (about 70 MB per language) once, then embeds and scores in
+the browser. Nothing is sent to a server. Pick the scheme language (PT or EN), the
+level (`auto`, section ... subgroup) and how many results; `?q=...&lang=PT&level=group`
+in the URL pre-fills and runs a query. The results are drawn as one tree, their paths
+merged under a root node: nodes are the symbol parts (IPC › A › 62 › C › 25/00 › 25/01), each edge carries the
+similarity of that entry to the text, and the edge into a result carries its score.
+Hovering or focusing an edge or node shows the entry's title. The table below the
+tree lists the same results with their full path text. Results differ slightly from the package: the
+vectors are int8 and the model is 8-bit (ADR 0007, numbers in `docs/evals.md`).
+
+## 2. Hosted: Hugging Face Inference Endpoint
 
 The repository `jaimenms/text2ipc-pt` holds the Portuguese IPC 2026 index and a
 `handler.py`. Deployed as an Inference Endpoint it answers JSON:
@@ -32,7 +47,7 @@ for m in r.json():
 `auto_margin`, `normalize`. Each result has `symbol`, `canonical`, `level`, `depth`,
 `score`, `similarity`, `title` and `path` (the full section-to-entry text).
 
-## 2. Local, with a prebuilt index
+## 3. Local, with a prebuilt index
 
 Python 3.11 to 3.13. Install the package with the sentence-transformers extra:
 
@@ -83,7 +98,7 @@ h = EndpointHandler("hf/text2ipc-pt")
 h({"inputs": "...", "parameters": {"level": "group", "top_k": 5}})
 ```
 
-## 3. Local, building your own index
+## 4. Local, building your own index
 
 ```bash
 uv sync --all-extras
@@ -99,7 +114,7 @@ Models: any sentence-transformers model (`st:<name>`), any Ollama embedding mode
 (`ollama:<name>`). Building takes 3 to 10 minutes on an Apple M-series depending on
 the model; the result is two Parquet tables under the home directory.
 
-## 4. Evaluate
+## 5. Evaluate
 
 ```bash
 uv run t2ipc rpi 2905                        # cases from an INPI RPI issue
@@ -109,11 +124,17 @@ uv run t2ipc eval evals/rpi_2905.jsonl --lang PT --level subgroup --show-misses 
 `notebooks/01_text2ipc.ipynb` walks through all of the above and reports accuracy on
 1,000 INPI applications. Current numbers and their history are in `docs/evals.md`.
 
-## 5. Publish
+## 6. Publish
 
 ```bash
-scripts/publish_hf.sh --lang PT                # export + upload to <you>/text2ipc-pt
+scripts/publish_hf.sh --lang PT                # endpoint repo: export + upload to <you>/text2ipc-pt
 scripts/publish_hf.sh --lang EN --public       # another language, public repo
+scripts/publish_space.sh                       # browser demo: PT + EN, e5-small, <you>/text2ipc
+scripts/publish_space.sh --lang PT --private   # one language, private Space
 ```
 
-Needs `hf auth login` once. The script is idempotent: unchanged files are skipped.
+Needs `hf auth login` once. Both scripts are idempotent: unchanged files are skipped.
+The Space script runs `t2ipc web-export`, which needs an index built with the same
+model for every language it ships (e5-base by default: `t2ipc build --lang PT`);
+pass `--model` to ship another embedder that has an ONNX twin on the Hub, for example
+e5-small at 118 MB in the browser.

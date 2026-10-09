@@ -10,6 +10,10 @@ every measurement along the way.
 
 ## Quick start
 
+Try it without installing anything:
+[huggingface.co/spaces/jaimenms/text2ipc](https://huggingface.co/spaces/jaimenms/text2ipc)
+runs the embedder and the scoring in your browser (ADR 0007).
+
 Use the published Portuguese index (IPC 2026, `intfloat/multilingual-e5-base`):
 
 ```bash
@@ -80,14 +84,17 @@ repository [jaimenms/text2ipc-pt](https://huggingface.co/jaimenms/text2ipc-pt).
 │   ├── search/scorer.py          flat cosine + path/subtree support, beam descent,
 │   │                             auto level, distinct-branch post-processing
 │   ├── eval/                     cases, RPI parsers (XML and legacy text), hit@k harness
-│   └── hf/                       Inference Endpoints handler and repository export
+│   ├── hf/                       Inference Endpoints handler and repository export
+│   └── web/                      static Space export; static/scorer.js is the port of scorer.py
 ├── scripts/
-│   ├── publish_hf.sh             export + upload an index to the Hub
+│   ├── publish_hf.sh             export + upload an index to the Hub (endpoint repo)
+│   ├── publish_space.sh          export + upload the browser demo (static Space)
 │   ├── make_notebooks.py         generates notebooks/ (edit this, not the .ipynb)
 │   └── build_index.py            thin wrapper over `t2ipc build`
 ├── notebooks/01_text2ipc.ipynb   executed study notebook
 ├── evals/rpi_<issue>.jsonl       29 INPI issues, ~12k applications with their IPC symbols
-├── tests/                        42 tests; no network, no real model (hash embedder + fixtures)
+├── tests/                        46 tests; no network, no real model (hash embedder + fixtures);
+│                                 js_parity.mjs runs scorer.js under Node against the Python scorer
 ├── docs/                         usage, methodology, evals, adr/
 └── data/                         (gitignored) wipo/ inpi/ rpi/ raw sources, scheme/ index/ Parquet tables
 ```
@@ -100,7 +107,8 @@ uv run t2ipc build --version 20260101 --lang PT      # ~3 min with e5-small, ~10
 uv run t2ipc eval evals/rpi_2905.jsonl --lang PT --level subgroup
 uv run pytest && uv run ruff check . && uv run ruff format .
 uv run python scripts/make_notebooks.py && uv run jupyter nbconvert --to notebook --execute --inplace notebooks/01_text2ipc.ipynb
-scripts/publish_hf.sh --lang PT
+scripts/publish_hf.sh --lang PT                      # endpoint repo on the Hub
+scripts/publish_space.sh                             # browser demo (static Space)
 ```
 
 Data sources: IPC master files by [WIPO](https://www.wipo.int/classifications/ipc/en/),
