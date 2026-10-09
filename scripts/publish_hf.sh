@@ -6,7 +6,9 @@
 #   scripts/publish_hf.sh --version 20270101 --public
 #
 # Needs `hf auth login` (or HF_TOKEN) once. Re-running is idempotent: unchanged files
-# are skipped by the Hub, changed ones become a new commit.
+# are skipped by the Hub, changed ones become a new commit. Every upload is tagged
+# `v<package version>` (plus `-<n>` if that tag exists), so users can pin a revision:
+# `t2ipc download --revision v0.2.0`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -34,4 +36,5 @@ uv run t2ipc hf-export "$OUT" --version "$VERSION" --lang "$LANG_CODE" --repo-id
 BUILT=$(python3 -c "import json;print(json.load(open('$OUT/text2ipc.json'))['version'])")
 MESSAGE=${MESSAGE:-"text2ipc IPC $BUILT $LANG_CODE ($(git rev-parse --short HEAD 2>/dev/null || echo uncommitted))"}
 uv run hf upload "$REPO" "$OUT" . --repo-type model $VISIBILITY --commit-message "$MESSAGE"
-echo "published https://huggingface.co/$REPO"
+TAG=$(scripts/hf_tag.sh "$REPO" model)
+echo "published https://huggingface.co/$REPO (tag $TAG)"

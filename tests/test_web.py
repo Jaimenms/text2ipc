@@ -46,6 +46,43 @@ def test_export_layout(mini_home, tmp_path):
     assert "sdk: static" in (out / "README.md").read_text()
 
 
+def test_export_writes_examples(mini_home, tmp_path):
+    cases = tmp_path / "ex.jsonl"
+    cases.write_text(
+        json.dumps(
+            {
+                "id": "rpi1:X",
+                "text": "a",
+                "ipc": ["A01B0001040000"],
+                "title": "PÁ COM DENTES",
+                "abstract": "Uma pá com dentes.",
+                "source": "RPI 1",
+            }
+        )
+        + "\n"
+    )
+    out = export_web_demo(
+        tmp_path / "space",
+        model="hash:64",
+        langs=["EN"],
+        root=mini_home,
+        web_model="test/model",
+        examples=cases,
+    )
+    (ex,) = json.loads((out / "examples.json").read_text())
+    assert ex["title"] == "PÁ COM DENTES" and ex["ipc"] == ["A01B0001040000"]
+    cases.write_text(json.dumps({"id": "rpi1:Y", "text": "b", "ipc": ["A"], "title": "T"}) + "\n")
+    with pytest.raises(ValueError, match="title and an abstract"):
+        export_web_demo(
+            tmp_path / "space2",
+            model="hash:64",
+            langs=["EN"],
+            root=mini_home,
+            web_model="test/model",
+            examples=cases,
+        )
+
+
 def test_export_rejects_unknown_browser_model(mini_home, tmp_path):
     with pytest.raises(ValueError, match="browser model"):
         export_web_demo(tmp_path / "space", model="hash:64", langs=["EN"], root=mini_home)
@@ -109,6 +146,10 @@ def test_js_scorer_matches_python(mini_home, mini_index, embedder, tmp_path):
         for p in PARAMS:
             cases.append({"lang": "EN", "query": vec.tolist(), "params": _js_params(p)})
             expected.append(search(mini_index, vec, p))
+    stack = embedder.embed_queries(QUERIES[:3])  # a chunked long text: max over chunks
+    for p in (SearchParams(), SearchParams(level="group"), SearchParams(level="auto")):
+        cases.append({"lang": "EN", "query": stack.tolist(), "params": _js_params(p)})
+        expected.append(search(mini_index, stack, p))
     cases_path = tmp_path / "cases.json"
     cases_path.write_text(json.dumps(cases))
     run = subprocess.run(
@@ -130,3 +171,58 @@ def test_js_scorer_matches_python(mini_home, mini_index, embedder, tmp_path):
             ), label
             for field in ("score", "similarity", "path_support", "subtree_support"):
                 assert abs(getattr(a, field) - b[field]) < 1e-5, (label, field)
+
+
+SPLIT_TEXTS = [
+    "Pá com dentes. Enxada manual com duas lâminas! Grade de discos; grade de dentes.\n\n"
+    "Segundo parágrafo: ferramentas de mão. Fim.",
+    " ".join(f"palavra{i}" for i in range(23)),
+    "Uma frase só.",
+    "A. B. C. D. E. F. G.",
+]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_js_split_matches_python(mini_home, tmp_path):
+    from text2ipc.chunking import split_text
+
+    out = export_web_demo(
+        tmp_path / "space", model="hash:64", langs=["EN"], root=mini_home, web_model="t/m"
+    )
+    count = lambda t: len(t.split())  # noqa: E731
+    cases, expected = [], []
+    for text in SPLIT_TEXTS:
+        for max_tokens, overlap in ((6, 1), (10, 0), (4, 2)):
+            cases.append({"split": {"text": text, "max_tokens": max_tokens, "overlap": overlap}})
+            expected.append(split_text(text, max_tokens, count, overlap=overlap))
+    cases_path = tmp_path / "cases.json"
+    cases_path.write_text(json.dumps(cases))
+    run = subprocess.run(
+        [NODE, str(PARITY), str(out), str(cases_path)], capture_output=True, text=True
+    )
+    assert run.returncode == 0, run.stderr
+    assert json.loads(run.stdout) == expected
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_js_fusion_matches_python(mini_home, tmp_path):
+    from text2ipc.rerank import fuse
+
+    out = export_web_demo(
+        tmp_path / "space", model="hash:64", langs=["EN"], root=mini_home, web_model="t/m"
+    )
+    scores = [0.9, 0.85, 0.8, 0.5]
+    logits = [-3.0, 0.0, 2.5, 20.0]
+    cases = [
+        {"fuse": {"scores": scores, "logits": logits, "how": h}}
+        for h in ("blend", "judge", "product")
+    ]
+    cases_path = tmp_path / "cases.json"
+    cases_path.write_text(json.dumps(cases))
+    run = subprocess.run(
+        [NODE, str(PARITY), str(out), str(cases_path)], capture_output=True, text=True
+    )
+    assert run.returncode == 0, run.stderr
+    for case, got in zip(cases, json.loads(run.stdout), strict=True):
+        expected = fuse(scores, logits, case["fuse"]["how"])
+        assert all(abs(a - b) < 1e-9 for a, b in zip(expected, got, strict=True))

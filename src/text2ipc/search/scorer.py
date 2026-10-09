@@ -40,11 +40,14 @@ from ..scheme.symbols import format_symbol
 
 @dataclass(frozen=True)
 class Weights:
-    """Defaults come from the sweep in docs/evals.md; subtree support is kept for
-    experiments but off by default since beam selection already uses it."""
+    """Defaults come from the sweeps in docs/evals.md. On the Portuguese scheme path
+    support lowers every hit rate for both e5 models (section and class titles are
+    generic and close to every query), so it is off by default since 2026-10-08; it
+    helped on the English scheme with e5-small. Subtree support is kept for
+    experiments; beam selection already uses it."""
 
-    own: float = 0.7
-    path: float = 0.3
+    own: float = 1.0
+    path: float = 0.0
     subtree: float = 0.0
 
 
@@ -71,8 +74,9 @@ class SearchParams:
     gap: float | None = None
     #: ``auto`` level: descend while best child >= parent - margin.
     auto_margin: float = 0.02
-    #: ``auto`` level: how many subclasses to start descending from.
-    auto_roots: int = 5
+    #: ``auto`` level: how many subclasses to start descending from; each yields at most
+    #: one result, so ``None`` means ``max(5, top_k)`` and ``top_k`` is honoured.
+    auto_roots: int | None = None
     #: Drop results that are ancestors or descendants of a higher-ranked result.
     dedupe_branches: bool = True
 
@@ -88,6 +92,8 @@ class Match:
     similarity: float
     path_support: float
     subtree_support: float
+    #: Reranker verdict in 0..1 when a second stage ran, else None.
+    judge: float | None = None
 
     @property
     def pretty(self) -> str:
@@ -95,11 +101,14 @@ class Match:
 
 
 def search(index: IpcIndex, query: np.ndarray, params: SearchParams | None = None) -> list[Match]:
+    """Rank entries for a unit query vector, or for a ``(chunks, dim)`` stack of them."""
     params = params or SearchParams()
     if params.level != AUTO_LEVEL and params.level not in LEVELS:
         raise ValueError(f"level must be one of {LEVELS} or {AUTO_LEVEL!r}")
 
-    sims = index.vectors @ np.asarray(query, dtype=np.float32)
+    q = np.asarray(query, dtype=np.float32)
+    # a (chunks, dim) stack comes from a long text: an entry scores by its best chunk
+    sims = index.vectors @ q if q.ndim == 1 else (index.vectors @ q.T).max(axis=1)
     path = _path_support(index, sims)
     subtree = _subtree_support(index, sims)
     w = params.weights
@@ -211,8 +220,9 @@ def _auto_descend(
     then answer with the node on the walked path whose *own* similarity is highest
     (deepest on ties). Own similarity is used because composite scores are not
     comparable across levels: deeper nodes inherit path support from their ancestors."""
+    n_roots = params.auto_roots if params.auto_roots is not None else max(5, params.top_k)
     roots = _beam_descend(index, best_below, "subclass", params.beam)
-    roots = sorted(roots, key=lambda i: -best_below[i])[: params.auto_roots]
+    roots = sorted(roots, key=lambda i: -best_below[i])[:n_roots]
     out: list[int] = []
     for i in roots:
         path = [i]

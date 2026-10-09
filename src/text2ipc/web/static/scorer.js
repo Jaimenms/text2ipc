@@ -10,14 +10,14 @@ export const LEVELS = ["section", "class", "subclass", "group", "subgroup"];
 export const AUTO_LEVEL = "auto";
 export const PATH_SEPARATOR = " > ";
 
-export const DEFAULT_WEIGHTS = { own: 0.7, path: 0.3, subtree: 0.0 };
+export const DEFAULT_WEIGHTS = { own: 1.0, path: 0.0, subtree: 0.0 }; // see Weights in scorer.py
 export const DEFAULT_BEAM = { section: 5, class: 10, subclass: 20, group: 40 };
 export const DEFAULT_PARAMS = {
   level: "subgroup",
   topK: 10,
   gap: null, // drop results scoring more than this below the best one
   autoMargin: 0.02, // auto level: descend while best child >= parent - margin
-  autoRoots: 5, // auto level: how many subclasses to start descending from
+  autoRoots: null, // auto level: subclasses to start from; null = max(5, topK)
   dedupeBranches: true, // drop ancestors/descendants of a higher-ranked result
 };
 
@@ -97,8 +97,18 @@ export function textAt(index, i) {
 
 // -- query normalisation (text2ipc/textnorm.py, classifier.normalize_query) ---
 
+const PARAGRAPH_RE = /\n\s*\n/;
+
+/** Non-empty parts separated by a blank line; single newlines do not split. */
+export function paragraphs(text) {
+  return text.split(PARAGRAPH_RE).filter((p) => p.trim());
+}
+
+/** Collapse runs of whitespace inside each paragraph; keep blank lines as breaks. */
 export function collapseWhitespace(text) {
-  return text.split(/\s+/).filter(Boolean).join(" ");
+  return paragraphs(text)
+    .map((p) => p.split(/\s+/).filter(Boolean).join(" "))
+    .join("\n\n");
 }
 
 export function lowercaseIfShouting(text, threshold = 0.6) {
@@ -109,21 +119,93 @@ export function lowercaseIfShouting(text, threshold = 0.6) {
 }
 
 export function normalizeQuery(text) {
-  return lowercaseIfShouting(collapseWhitespace(text));
+  return collapseWhitespace(text).split("\n\n").map(lowercaseIfShouting).join("\n\n");
 }
 
 // -- scoring ------------------------------------------------------------------
 
 function similarities(index, query) {
   const { rows, dim, data, scales, encoding } = index.vectors;
-  const sims = new Float64Array(rows);
-  for (let i = 0; i < rows; i++) {
-    const off = i * dim;
-    let s = 0;
-    for (let j = 0; j < dim; j++) s += data[off + j] * query[j];
-    sims[i] = encoding === "int8" ? s * scales[i] : s;
+  // an array of vectors comes from a long text: an entry scores by its best chunk
+  const queries = Array.isArray(query) ? query : [query];
+  const sims = new Float64Array(rows).fill(-Infinity);
+  for (const q of queries) {
+    if (q.length !== dim) throw new Error(`query has ${q.length} dimensions, index has ${dim}`);
+    for (let i = 0; i < rows; i++) {
+      const off = i * dim;
+      let s = 0;
+      for (let j = 0; j < dim; j++) s += data[off + j] * q[j];
+      s = encoding === "int8" ? s * scales[i] : s;
+      if (s > sims[i]) sims[i] = s;
+    }
   }
   return sims;
+}
+
+// -- long texts (text2ipc/chunking.py) -----------------------------------------
+
+const SENTENCE_RE = /(?<=[.!?;:])\s+(?=\S)/;
+
+/**
+ * One chunk per paragraph (blank-line separated, never merged), cut further into
+ * sentence chunks of at most maxTokens tokens when a paragraph is too long; a single
+ * over-long sentence is cut by words. `overlap` trailing sentences of a chunk are
+ * repeated at the start of the next. countTokens(text) must count a text as the
+ * embedder will see it; maxTokens null means no limit.
+ */
+export function splitText(text, maxTokens, countTokens, overlap = 1) {
+  return paragraphs(text).flatMap((p) => pack(p.trim(), maxTokens, countTokens, overlap));
+}
+
+function pack(paragraph, maxTokens, countTokens, overlap) {
+  if (maxTokens === null || maxTokens === undefined) {
+    return [paragraph.split(/\s+/).filter(Boolean).join(" ")];
+  }
+  let units = paragraph.split(SENTENCE_RE).map((s) => s.trim()).filter(Boolean);
+  units = units.flatMap((u) => cutByWords(u, maxTokens, countTokens));
+  const chunks = [];
+  let current = [];
+  for (const unit of units) {
+    if (current.length && countTokens([...current, unit].join(" ")) > maxTokens) {
+      chunks.push(current);
+      const carry = overlap > 0 ? current.slice(-overlap) : [];
+      current = [...carry, unit];
+      while (current.length > 1 && countTokens(current.join(" ")) > maxTokens) {
+        current = current.slice(1);
+      }
+    } else {
+      current.push(unit);
+    }
+  }
+  if (current.length) chunks.push(current);
+  return chunks.map((c) => c.join(" "));
+}
+
+function cutByWords(unit, maxTokens, countTokens) {
+  if (countTokens(unit) <= maxTokens) return [unit];
+  const out = [];
+  let piece = [];
+  for (const w of unit.split(/\s+/).filter(Boolean)) {
+    if (piece.length && countTokens([...piece, w].join(" ")) > maxTokens) {
+      out.push(piece.join(" "));
+      piece = [];
+    }
+    piece.push(w);
+  }
+  if (piece.length) out.push(piece.join(" "));
+  return out;
+}
+
+/** Unit-length mean of several unit vectors (the "mean" chunking policy). */
+export function meanVector(vectors) {
+  const dim = vectors[0].length;
+  const out = new Float32Array(dim);
+  for (const v of vectors) for (let j = 0; j < dim; j++) out[j] += v[j];
+  let norm = 0;
+  for (let j = 0; j < dim; j++) norm += out[j] * out[j];
+  norm = Math.sqrt(norm) || 1;
+  for (let j = 0; j < dim; j++) out[j] /= norm;
+  return out;
 }
 
 /** Mean similarity of the ancestors; equals own similarity for roots. */
@@ -201,8 +283,9 @@ function argmaxFirst(items, values) {
  * on ties).
  */
 function autoDescend(index, sims, score, bestBelow, p) {
+  const nRoots = p.autoRoots ?? Math.max(5, p.topK);
   let roots = beamDescend(index, bestBelow, "subclass", p.beam);
-  roots = sortDesc(roots, bestBelow).slice(0, p.autoRoots);
+  roots = sortDesc(roots, bestBelow).slice(0, nRoots);
   const out = [];
   for (const i of roots) {
     const path = [i];
@@ -260,9 +343,6 @@ export function rank(index, query, params = {}) {
   if (p.level !== AUTO_LEVEL && !LEVELS.includes(p.level)) {
     throw new Error(`level must be one of ${LEVELS.join(", ")} or ${AUTO_LEVEL}`);
   }
-  if (query.length !== index.dim) {
-    throw new Error(`query has ${query.length} dimensions, index has ${index.dim}`);
-  }
   const sims = similarities(index, query);
   const path = pathSupport(index, sims);
   const subtree = subtreeSupport(index, sims);
@@ -300,4 +380,32 @@ export function rank(index, query, params = {}) {
     subtreeSupport: subtree[i],
   }));
   return { matches, sims, scores: score, pathSupport: path, subtreeSupport: subtree };
+}
+
+// -- second stage (text2ipc/rerank/base.py) ------------------------------------
+
+export function sigmoid(x) {
+  return 1 / (1 + Math.exp(-x));
+}
+
+/**
+ * Combine first-stage scores with a judge's logits: "blend" (default) is
+ * score * (0.5 + 0.5 * sigmoid(logit)); "judge" is sigmoid(logit) alone;
+ * "product" is score * sigmoid(logit).
+ */
+export function fuse(scores, logits, how = "blend") {
+  return scores.map((s, i) => {
+    const j = sigmoid(logits[i]);
+    if (how === "blend") return s * (0.5 + 0.5 * j);
+    if (how === "judge") return j;
+    if (how === "product") return s * j;
+    throw new Error(`fusion must be blend, judge or product, got ${how}`);
+  });
+}
+
+/** Reorder matches by the fused score and attach each judge verdict (0..1). */
+export function rerankMatches(matches, logits, how = "blend", topK = matches.length) {
+  const fused = fuse(matches.map((m) => m.score), logits, how);
+  const order = matches.map((_, i) => i).sort((a, b) => fused[b] - fused[a]);
+  return order.slice(0, topK).map((i) => ({ ...matches[i], score: fused[i], judge: sigmoid(logits[i]) }));
 }

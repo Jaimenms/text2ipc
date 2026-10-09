@@ -42,6 +42,17 @@ WEB_MODELS = {
 
 STATIC_FILES = ("index.html", "app.js", "scorer.js")
 
+#: Token limit the browser applies before chunking a long text (sentence-transformers
+#: ``max_seq_length`` of the model); e5 models take 512.
+WEB_MAX_TOKENS = {"intfloat/multilingual-e5-small": 512, "intfloat/multilingual-e5-base": 512}
+
+#: Cross-encoder the page offers as an opt-in second stage (ONNX on the Hub). jina v2
+#: in 8 bits equals bge-reranker-v2-m3 at @1 on the evals at half the size (docs/evals.md).
+WEB_DEFAULT_RERANKER = "jinaai/jina-reranker-v2-base-multilingual"
+WEB_RERANKER_DTYPE = "q8"
+WEB_RERANK_CANDIDATES = 25
+WEB_RERANK_MAX_LENGTH = 768
+
 SPACE_README = """---
 title: text2ipc
 emoji: 🏷️
@@ -63,7 +74,10 @@ get a ranked list of International Patent Classification symbols. Nothing is sen
 a server: the page downloads the quantised embedder `{web_model}` ({web_dtype}) and the
 IPC index once, then embeds the query and scores it against the hierarchy locally.
 
-Indexes in this Space: {index_list}.
+Indexes in this Space: {index_list}. The "Rerank" option loads a second model,
+`{reranker}` in 8 bits, that re-judges the best candidates against the text
+(that model is released under CC BY-NC 4.0: this demo is non-commercial; the
+package's default reranker, `BAAI/bge-reranker-v2-m3`, is Apache-2.0).
 
 How it works, the evaluation numbers and the Python package are at
 https://github.com/Jaimenms/text2ipc. The same index runs locally with
@@ -132,10 +146,14 @@ def export_web_demo(
     web_model: str | None = None,
     web_dtype: str = "q8",
     encoding: str = "int8",
+    examples: Path | None = None,
+    web_reranker: str | None = WEB_DEFAULT_RERANKER,
 ) -> Path:
     """Write the static Space into ``out``; one index per language, all on ``model``.
 
     ``version`` is resolved per language against the indexes built for ``model``.
+    ``examples`` is a JSONL of eval cases (``t2ipc rpi`` format) shown as clickable
+    examples, with the office-assigned symbols so the page can mark agreeing results.
     """
     from ..classifier import resolve_built_version
     from ..embeddings.base import model_slug
@@ -184,6 +202,18 @@ def export_web_demo(
         "web_model": web_model,
         "web_dtype": web_dtype,
         "query_prefix": query_prefix,
+        "max_tokens": WEB_MAX_TOKENS.get(model.partition(":")[2], 512),
+        "reranker": (
+            {
+                "web_model": web_reranker,
+                "dtype": WEB_RERANKER_DTYPE,
+                "candidates": WEB_RERANK_CANDIDATES,
+                "max_length": WEB_RERANK_MAX_LENGTH,
+                "fusion": "blend",
+            }
+            if web_reranker
+            else None
+        ),
         "dim": dim,
         "levels": list(LEVELS),
         "indexes": entries,
@@ -193,14 +223,21 @@ def export_web_demo(
     static = Path(__file__).with_name("static")
     for name in STATIC_FILES:
         shutil.copy2(static / name, out / name)
+    if examples is not None:
+        (out / "examples.json").write_text(
+            json.dumps(load_examples(examples), ensure_ascii=False, indent=1)
+        )
     (out / "package.json").write_text(json.dumps({"type": "module", "private": True}) + "\n")
     (out / ".gitattributes").write_text("*.bin filter=lfs diff=lfs merge=lfs -text\n")
     (out / "README.md").write_text(
         SPACE_README.format(
-            models="\n".join(f"  - {m}" for m in [web_model]),
+            models="\n".join(
+                f"  - {m}" for m in [web_model, *([web_reranker] if web_reranker else [])]
+            ),
             web_model=web_model,
             web_dtype=web_dtype,
             index_list=", ".join(f"IPC {e['version']} {e['lang']}" for e in entries),
+            reranker=web_reranker or "none",
             data_note=(
                 "; Portuguese titles from INPI Brazil's IPC Publication"
                 if "PT" in data_notes
@@ -208,6 +245,27 @@ def export_web_demo(
             ),
         )
     )
+    return out
+
+
+def load_examples(path: Path) -> list[dict]:
+    """Eval cases with a title and an abstract, as the page shows them."""
+    out = []
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        c = json.loads(line)
+        if not (c.get("title") and c.get("abstract")):
+            raise ValueError(f"example {c.get('id')} needs both a title and an abstract")
+        out.append(
+            {
+                "id": c["id"],
+                "title": c["title"],
+                "abstract": c["abstract"],
+                "ipc": list(c["ipc"]),
+                "source": c.get("source") or "",
+            }
+        )
     return out
 
 

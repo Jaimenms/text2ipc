@@ -29,6 +29,7 @@
              border-radius: 8px; background: transparent; color: inherit; font: inherit; resize: vertical; }
   .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
   .controls label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  .controls label small { color: var(--muted); font-size: .8rem; }
   select, input[type=number] { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
              background: transparent; color: inherit; font: inherit; }
   input[type=number] { width: 64px; }
@@ -50,6 +51,11 @@
   td.symbol { font-family: var(--mono); white-space: nowrap; }
   td.path { color: var(--fg); }
   #meta { color: var(--muted); font-size: .85rem; margin-top: 8px; }
+  .gold-line { color: var(--muted); font-size: .9rem; margin-top: 10px; }
+  .gold-line:empty { display: none; }
+  .gold-line strong { color: var(--fg); }
+  tr.gold td.symbol { font-weight: 600; }
+  .tick { color: var(--accent); font-weight: 700; }
   /* graph */
   #graph { overflow: auto; margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; }
   #graph:empty { display: none; }
@@ -96,11 +102,12 @@
     The page embeds it with a multilingual model and scores it against the IPC hierarchy
     locally; the text never leaves this tab.</p>
 
-  <textarea id="text" placeholder="Aparelho para combate a incêndios com mangueira flexível reforçada" spellcheck="false"></textarea>
+  <textarea id="text" placeholder="Title and abstract of a patent application, or the whole description: long texts are cut into sentence chunks…" spellcheck="false"></textarea>
   <div class="controls">
     <label>Scheme <select id="lang"></select></label>
     <label>Level <select id="level"></select></label>
     <label>Top <input id="topk" type="number" min="1" max="50" value="5"></label>
+    <label id="rerank-label"><input id="rerank" type="checkbox"> Rerank <small>(cross-encoder, slower)</small></label>
     <button id="run" type="button">Classify</button>
   </div>
   <div id="examples"></div>
@@ -108,7 +115,9 @@
   <div id="graph"></div>
   <p id="legend" class="legend" hidden>Each result's path, merged into one tree: IPC › section › class › subclass › group › subgroups.
     <i class="thin"></i>similarity of that entry to the text &nbsp; <i class="thick"></i>edge into a result, labelled with its score.
-    Hover or focus an edge or a node for the entry's title.</p>
+    Hover or focus an edge or a node for the entry's title. ✓ marks a result that agrees with INPI's symbol for an example.
+    With Rerank, a cross-encoder re-judges the top candidates and the score becomes cosine × (0.5 + 0.5 × judge).</p>
+  <div id="gold" class="gold-line"></div>
   <div id="results"></div>
   <div id="meta"></div>
   <div id="tip" hidden></div>

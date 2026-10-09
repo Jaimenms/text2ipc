@@ -22,6 +22,10 @@ DEFAULT_LANG = "EN"
 #: evals (docs/evals.md). Override with ``TEXT2IPC_MODEL`` or the ``model=`` argument.
 DEFAULT_MODEL = "st:intfloat/multilingual-e5-base"
 
+#: Cross-encoder that re-scores the first stage's candidates when ``rerank`` is on.
+#: Multilingual, 568M parameters; lifts subclass@1 by 9 points on the PT evals.
+DEFAULT_RERANKER = "ce:BAAI/bge-reranker-v2-m3"
+
 WIPO_BASE_URL = "https://www.wipo.int/ipc/itos4ipc/ITSupport_and_download_area"
 
 

@@ -43,3 +43,13 @@ class HashEmbedder:
 
     def embed_query(self, text: str) -> np.ndarray:
         return self.embed_passages([text])[0]
+
+    def embed_queries(self, texts: Sequence[str]) -> np.ndarray:
+        return self.embed_passages(texts)
+
+    @property
+    def max_tokens(self) -> int | None:
+        return None
+
+    def count_tokens(self, text: str) -> int:
+        return len(_TOKEN_RE.findall(text.lower()))

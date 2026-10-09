@@ -60,6 +60,11 @@ def test_normalize_query_lowercases_shouting_titles():
 
     assert normalize_query("  PÁ COM   DENTES ") == "pá com dentes"
     assert normalize_query("A hand hoe with DNA marker") == "A hand hoe with DNA marker"
+    # paragraph by paragraph: a shouting title above a mixed-case abstract
+    assert (
+        normalize_query("PÁ COM DENTES\n\n\nUma pá  com dentes.\n")
+        == "pá com dentes\n\nUma pá com dentes."
+    )
 
 
 def test_branch_dedupe_keeps_only_distinct_branches(mini_index, embedder):
@@ -88,3 +93,12 @@ def test_branch_dedupe_across_levels_in_auto_mode(mini_index, embedder):
     symbols = [h.symbol for h in hits]
     assert symbols[0] == "A01B0001040000"
     assert "A01B0001020000" not in symbols and "A01B0001000000" not in symbols
+
+
+def test_auto_level_honours_top_k(mini_index, embedder):
+    v = q(embedder, "soil working agriculture")
+    one = search(mini_index, v, SearchParams(level="auto", top_k=1))
+    many = search(mini_index, v, SearchParams(level="auto", top_k=10))
+    pinned = search(mini_index, v, SearchParams(level="auto", top_k=10, auto_roots=1))
+    assert len(one) == 1 and len(pinned) == 1
+    assert len(many) >= 2  # the mini scheme has more than one subclass

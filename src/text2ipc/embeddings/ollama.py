@@ -53,3 +53,13 @@ class OllamaEmbedder:
 
     def embed_query(self, text: str) -> np.ndarray:
         return self._embed([text])[0]
+
+    def embed_queries(self, texts: Sequence[str]) -> np.ndarray:
+        return self._embed(list(texts))
+
+    @property
+    def max_tokens(self) -> int | None:
+        return None  # Ollama truncates server side; the limit is not exposed
+
+    def count_tokens(self, text: str) -> int:
+        return len(text.split())

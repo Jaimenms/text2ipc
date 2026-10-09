@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 from functools import lru_cache
 from pathlib import Path
 
-from .config import LEVELS, default_model, home
+import numpy as np
+
+from .chunking import split_text
+from .config import DEFAULT_RERANKER, LEVELS, default_model, home
 from .embeddings import Embedder, get_embedder, model_slug
+from .embeddings.base import normalize
 from .index import IpcIndex, available_indexes, scheme_table_path
+from .rerank import Reranker, fuse, get_reranker, sigmoid
 from .search import Beam, Match, SearchParams, Weights, search
 from .textnorm import collapse_whitespace, lowercase_if_shouting
 
@@ -34,6 +40,9 @@ class IpcClassifier:
         self.version = resolve_built_version(version, self.lang, self._model_name, self.root)
         self._index: IpcIndex | None = None
         self._embedder: Embedder | None = None
+        self._rerankers: dict[str, Reranker] = {}
+        #: How many chunks the last ``embed_text`` call used (1 when the text fit).
+        self.last_chunks = 1
 
     @property
     def _model_name(self) -> str:
@@ -67,28 +76,94 @@ class IpcClassifier:
         beam: Beam | None = None,
         auto_margin: float = 0.02,
         normalize: bool = True,
+        chunking: str = "mean",
+        rerank: bool | str | Reranker = False,
+        candidates: int | None = None,
+        fusion: str = "blend",
     ) -> list[Match]:
+        """Rank IPC entries for a text of any length.
+
+        ``rerank`` adds a second stage: the first stage keeps ``candidates`` entries
+        (default ``max(5 * top_k, 25)``), a cross-encoder (``True`` for the default
+        model, or a spec such as ``ce:BAAI/bge-reranker-v2-m3``) judges each one
+        against the text, and ``fusion`` combines the two scores (``blend``,
+        ``judge`` or ``product``, see ``rerank.fuse``). ``gap`` applies to the first
+        stage. Each match then carries its ``judge`` verdict in 0..1.
+
+        Paragraphs (blank-line separated, e.g. a title above an abstract) are embedded
+        separately, and a paragraph over the embedder's limit is cut into sentence
+        chunks. ``chunking`` says how the pieces combine: ``"mean"`` searches with
+        their unit-length mean, ``"max"`` searches with every vector and scores an
+        entry by its best piece, ``"truncate"`` embeds the text whole and lets the
+        embedder cut it (the old behaviour).
+        """
         if normalize:
             text = normalize_query(text)
+        n_first = top_k if not rerank else (candidates or max(5 * top_k, 25))
         params = SearchParams(
             level=level,
-            top_k=top_k,
+            top_k=n_first,
             gap=gap,
             weights=weights or Weights(),
             beam=beam or Beam(),
             auto_margin=auto_margin,
         )
-        return search(self.index, self.embedder.embed_query(text), params)
+        matches = search(self.index, self.embed_text(text, chunking=chunking), params)
+        if not rerank or not matches:
+            return matches[:top_k]
+        reranker = self.reranker(rerank)
+        logits = reranker.score(text, [m.text for m in matches])
+        fused = fuse(np.array([m.score for m in matches]), logits, fusion)
+        verdict = sigmoid(logits)
+        order = np.argsort(-fused, kind="stable")[:top_k]
+        return [
+            dataclasses.replace(matches[i], score=float(fused[i]), judge=float(verdict[i]))
+            for i in order
+        ]
+
+    def reranker(self, spec: bool | str | Reranker = True) -> Reranker:
+        """The reranker for a spec (``True`` means the default), loaded once."""
+        if spec is True:
+            spec = DEFAULT_RERANKER
+        if not isinstance(spec, str):
+            return spec
+        if spec not in self._rerankers:
+            self._rerankers[spec] = get_reranker(spec)
+        return self._rerankers[spec]
+
+    def embed_text(self, text: str, *, chunking: str = "mean") -> np.ndarray:
+        """Query vector for a text of any length; a ``(chunks, dim)`` stack for ``"max"``.
+
+        Sets ``last_chunks``. A single paragraph within the token limit is embedded
+        whole.
+        """
+        if chunking not in ("mean", "max", "truncate"):
+            raise ValueError("chunking must be 'mean', 'max' or 'truncate'")
+        embedder = self.embedder
+        chunks = (
+            [text]
+            if chunking == "truncate"
+            else split_text(text, embedder.max_tokens, embedder.count_tokens)
+        )
+        self.last_chunks = len(chunks)
+        if len(chunks) == 1:
+            return embedder.embed_query(text)
+        vectors = embedder.embed_queries(chunks)
+        if chunking == "max":
+            return vectors
+        return normalize(vectors.mean(axis=0))[0]
 
 
 def normalize_query(text: str) -> str:
-    """Collapse whitespace and lower-case text that is mostly upper case.
+    """Collapse whitespace and lower-case text that is mostly upper case, paragraph by
+    paragraph, keeping blank lines as paragraph breaks.
 
     Patent titles are printed in capitals; the tokenizers of multilingual models
     handle them badly (subclass hit@10 on RPI titles went from 25% to 35% by
-    lower-casing). Mixed-case abstracts are left alone.
+    lower-casing). Mixed-case abstracts are left alone. Per paragraph, so that a
+    shouting title above a mixed-case abstract is still lower-cased.
     """
-    return lowercase_if_shouting(collapse_whitespace(text))
+    return "\n\n".join(lowercase_if_shouting(p) for p in collapse_whitespace(text).split("\n\n"))
 
 
 def classify(

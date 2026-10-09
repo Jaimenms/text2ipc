@@ -9,8 +9,10 @@ symbols at a chosen hierarchy level. Packaged as `text2ipc`, intended for PyPI.
 1. **A tiny public interface.** `classify(text, version, level)` and the `t2ipc` CLI.
    Everything else is implementation detail that may change.
 2. **Embeddings plus hierarchy, no training.** Each IPC entry is embedded once from its
-   full ancestor path; queries are scored with path support, subtree support and beam
-   descent (`docs/methodology.md`). No fine-tuned classifier, no LLM in the loop.
+   full ancestor path; queries are embedded by paragraph (mean of the pieces) and scored
+   by cosine, with path support, subtree support and beam descent available as
+   parameters; an optional cross-encoder reranks the candidates
+   (`docs/methodology.md`). No fine-tuned classifier, no LLM in the loop.
 3. **Versions are first class.** WIPO publishes a scheme per year; indexes are built per
    version and reuse vectors from the previous version when the entry text is unchanged.
 4. **Language is a dimension, not an afterthought.** The scheme language (EN/FR from
@@ -27,6 +29,8 @@ symbols at a chosen hierarchy level. Packaged as `text2ipc`, intended for PyPI.
 | `src/text2ipc/embeddings/` | Embedder protocol; sentence-transformers, Ollama and hash backends |
 | `src/text2ipc/index/` | Parquet scheme/index tables, incremental build, discovery, publishing, CSV migration |
 | `src/text2ipc/search/` | Hierarchical scoring heuristics |
+| `src/text2ipc/chunking.py` | Paragraph and sentence chunks for texts over the embedder's limit |
+| `src/text2ipc/rerank/` | Second stage: cross-encoder judges the candidates; `hash:` backend for tests |
 | `src/text2ipc/eval/` | RPI parser, eval cases, hit-rate harness |
 | `src/text2ipc/hf/` | Inference Endpoints handler and repository export |
 | `src/text2ipc/web/` | Static Hugging Face Space export; `static/scorer.js` is a port of `search/scorer.py` |
@@ -82,8 +86,10 @@ uv run t2ipc web-export space/text2ipc --lang PT --lang EN   # static Space (bro
 scripts/publish_space.sh                               # export + upload the Space
 uv run t2ipc download                                  # what an end user runs (from the Hub)
 uv run t2ipc classify "texto do resumo" --level group
+uv run t2ipc classify "texto do resumo" --lang PT --rerank   # + cross-encoder (2.2 GB model)
 uv run t2ipc rpi 2100 --require-abstract               # eval cases (abstracts) from RPI 2100
 uv run t2ipc eval evals/rpi_2100.jsonl --level subgroup
+uv run t2ipc eval evals/rpi_2905.jsonl --lang PT --rerank      # second stage measured
 uv run python scripts/make_notebooks.py && uv run jupyter nbconvert --to notebook --execute --inplace notebooks/01_text2ipc.ipynb
 uv run pytest
 uv run ruff check . && uv run ruff format .

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const [exportDir, casesPath] = process.argv.slice(2);
-const { buildIndex, parseVectors, search } = await import(
+const { buildIndex, parseVectors, search, splitText, fuse } = await import(
   pathToFileURL(join(exportDir, "scorer.js")).href
 );
 const manifest = JSON.parse(readFileSync(join(exportDir, "manifest.json"), "utf8"));
@@ -30,8 +30,14 @@ function indexFor(lang) {
   return indexes.get(lang);
 }
 
+const toQuery = (q) => (Array.isArray(q[0]) ? q.map((v) => Float32Array.from(v)) : Float32Array.from(q));
+const countWords = (t) => t.split(/\s+/).filter(Boolean).length;
 const out = cases.map((c) =>
-  search(indexFor(c.lang), Float32Array.from(c.query), c.params).map((m) => ({
+  c.fuse
+    ? fuse(c.fuse.scores, c.fuse.logits, c.fuse.how)
+    : c.split
+    ? splitText(c.split.text, c.split.max_tokens, countWords, c.split.overlap)
+    : search(indexFor(c.lang), toQuery(c.query), c.params).map((m) => ({
     symbol: m.symbol,
     pretty: m.pretty,
     level: m.level,

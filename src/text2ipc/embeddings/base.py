@@ -33,6 +33,16 @@ class Embedder(Protocol):
     def embed_query(self, text: str) -> np.ndarray:
         """(dim,) float32 unit vector. Some models want a different prefix for queries."""
 
+    def embed_queries(self, texts: Sequence[str]) -> np.ndarray:
+        """(len(texts), dim) unit vectors, one query per text."""
+
+    @property
+    def max_tokens(self) -> int | None:
+        """Longest input the model embeds whole; None when unbounded or unknown."""
+
+    def count_tokens(self, text: str) -> int:
+        """Tokens ``embed_query(text)`` feeds the model, prefix and special tokens included."""
+
 
 def get_embedder(spec: str | Embedder, **kwargs) -> Embedder:
     if not isinstance(spec, str):

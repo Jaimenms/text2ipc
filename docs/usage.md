@@ -15,7 +15,15 @@ in the URL pre-fills and runs a query. The results are drawn as one tree, their 
 merged under a root node: nodes are the symbol parts (IPC › A › 62 › C › 25/00 › 25/01), each edge carries the
 similarity of that entry to the text, and the edge into a result carries its score.
 Hovering or focusing an edge or node shows the entry's title. The table below the
-tree lists the same results with their full path text. Results differ slightly from the package: the
+tree lists the same results with their full path text. "Rerank" loads a second
+model once (`jinaai/jina-reranker-v2-base-multilingual`, 280 MB in 8 bits) and
+re-judges the top 25 candidates against the text; it takes some seconds per query
+in the browser and adds a Judge column. That model is licensed CC BY-NC 4.0
+(non-commercial), which suits a demo; the package's default reranker
+(`BAAI/bge-reranker-v2-m3`) is Apache-2.0. The example buttons are real
+applications from `evals/demo_examples.jsonl` (title plus abstract, with the symbols
+INPI assigned); they were chosen so that the top group on the PT scheme agrees with
+INPI, and results that agree at their level are marked ✓. Results differ slightly from the package: the
 vectors are int8 and the model is 8-bit (ADR 0007, numbers in `docs/evals.md`).
 
 ## 2. Hosted: Hugging Face Inference Endpoint
@@ -44,8 +52,10 @@ for m in r.json():
 
 `inputs` may be a string or a list of strings (one result list per input). Parameters:
 `level` (section, class, subclass, group, subgroup, auto), `top_k`, `gap`,
-`auto_margin`, `normalize`. Each result has `symbol`, `canonical`, `level`, `depth`,
-`score`, `similarity`, `title` and `path` (the full section-to-entry text).
+`auto_margin`, `normalize`, `chunking` (`mean`, `max`, `truncate`), `rerank` (true, or
+a reranker spec), `candidates`, `fusion`. Each result has `symbol`, `canonical`,
+`level`, `depth`, `score`, `similarity`, `judge` (0..1 when reranked, else null),
+`title` and `path` (the full section-to-entry text).
 
 ## 3. Local, with a prebuilt index
 
@@ -85,6 +95,24 @@ for m in clf.classify(
 `level="auto"` descends as far as the evidence supports. Results are distinct
 branches of the IPC tree: an ancestor or descendant of a better-ranked result is
 dropped (`dedupe_branches=False` on `SearchParams` keeps them).
+
+`rerank=True` adds a second stage: a multilingual cross-encoder
+(`BAAI/bge-reranker-v2-m3`, 2.2 GB, downloaded on first use) judges the top
+candidates against the text and the scores are fused; each match then has a
+`judge` value in 0..1. It costs under a second per query on an Apple GPU and raises
+subclass@1 by 8 points on the evals (`docs/evals.md`):
+
+```bash
+t2ipc classify "..." --lang PT --level group --rerank
+t2ipc classify "..." --lang PT --rerank --reranker ce:BAAI/bge-reranker-v2-m3 --candidates 50
+t2ipc eval evals/rpi_2905.jsonl --lang PT --rerank
+```
+
+Any length of text works: a whole description is cut into sentence chunks that fit
+the embedder and the chunk vectors are averaged (`chunking="mean"`; `"max"` scores
+an entry by its best chunk, `"truncate"` keeps only what the embedder can take).
+`clf.last_chunks` says how many chunks the last call used; the CLI prints it in the
+table title. The browser demo does the same.
 
 Run the exact handler the endpoint runs, locally:
 

@@ -54,15 +54,23 @@ it is cheap. Three heuristics then reshape it:
 | path support | mean own-similarity of the entry's ancestors | an isolated hit under an unrelated subclass |
 | subtree support | max own-similarity over the entry and its descendants | a class whose title is generic but whose children match |
 
-`score = 0.6 * own + 0.15 * path + 0.25 * subtree` (all three are `Weights` fields).
+`score = own_w * own + path_w * path + subtree_w * subtree` (the `Weights` fields).
+The defaults are `1.0, 0.0, 0.0`: on the Portuguese scheme, path support lowers every
+hit rate for both e5 models, because section and class titles are generic and sit
+close to every query, so a branch with bland ancestors (A62C, fire fighting) collects
+support for texts about anything (`docs/evals.md`, 2026-10-08). It helped on the
+English scheme with e5-small, which is why it stays available.
 
 **Beam descent.** Candidates at a level are restricted to children of the best
-parents at the level above (defaults: 3 sections, 6 classes, 10 subclasses, 25 main
-groups). This removes the specificity bias, where long specific subgroup texts win on
-word overlap alone, and it walks the tree rather than ranking a flat list.
+parents at the level above (defaults: 5 sections, 10 classes, 20 subclasses, 40 main
+groups), ranked by the best score in their subtree. Measured on the Portuguese
+scheme the width makes no difference between the defaults and no beam at all; it is
+kept because it walks the tree rather than ranking a flat list and costs nothing.
 
 **Auto level.** Starting from the top subclasses, descend while the best child's score
-is within `auto_margin` of its parent. The walk stops where the evidence stops.
+is within `auto_margin` of its parent. The walk stops where the evidence stops. Each
+starting subclass yields at most one result, so the number of starts (`auto_roots`)
+follows `top_k` (at least 5) unless set explicitly.
 
 **Gap.** Optionally drop results more than `gap` below the best score, giving a
 multi-label answer whose length depends on confidence.
@@ -73,6 +81,50 @@ subgroups are common (up to nine dot levels), and a subgroup inside the best ans
 adds nothing that its path does not already show. The list keeps only distinct
 branches and may hold fewer than k rows (`dedupe_branches=False` restores the raw
 top-k).
+
+### Long texts
+
+Paragraphs (blank-line separated) are embedded separately: on 500 INPI cases the
+mean of the title vector and the abstract vector gives subclass@1 26.6% against
+22.0% for the abstract alone and 22.0% for the two concatenated (`docs/evals.md`),
+so a title above an abstract is two pieces, not one string. The embedders also have
+a token limit (512 for the e5 family) and truncate silently beyond it, so a whole
+description would be judged by its first page: a paragraph over the limit is cut at
+sentence ends into chunks that fit (`chunking.split_text`, one sentence of overlap).
+Every piece is embedded as a query and the vectors are combined
+(`IpcClassifier.classify(..., chunking=...)`):
+
+| `chunking` | Query | Use |
+|---|---|---|
+| `mean` (default) | unit-length mean of the chunk vectors | one topic spread over many pages |
+| `max` | all chunk vectors; an entry scores by its best chunk | a text that covers several inventions |
+| `truncate` | the embedder's own cut | the old behaviour, for comparison |
+
+A single paragraph within the limit is embedded whole. Query normalisation
+(whitespace, lower-casing of shouting text) runs per paragraph. The browser demo
+applies the same split with the model's tokenizer (`splitText` in `scorer.js`) and
+the `mean` policy.
+
+### Reranking
+
+The first stage orders candidates badly more than it misses them: with the top 50
+at the subgroup level the office's subclass is in the list 64% of the time but
+first only 24% of the time (`docs/evals.md`). A second stage therefore judges each
+candidate against the text with a cross-encoder, a model that reads the pair
+together instead of comparing two vectors: `rerank=True` keeps
+`candidates = max(5 * top_k, 25)` entries from the first stage, scores every
+(text, path text) pair with `BAAI/bge-reranker-v2-m3` (568M parameters,
+multilingual), and fuses the two scores:
+
+`score = cosine * (0.5 + 0.5 * sigmoid(logit))`
+
+so the judge can at most halve a score, cosine still orders ties, and reranked
+scores stay comparable with plain ones. `fusion="judge"` and `"product"` are the
+alternatives measured; `Match.judge` carries the verdict in 0..1. On 991 INPI
+cases the default lifts subclass@1 from 23.6% to 31.6% and group@1 from 11.2% to
+16.6%, for about 0.7 s per query on an Apple M-series GPU. It is off by default in
+the package because of that cost and the 2.2 GB model; `t2ipc classify --rerank`
+and `t2ipc eval --rerank` switch it on.
 
 ## 4. Languages
 

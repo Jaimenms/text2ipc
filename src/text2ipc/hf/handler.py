@@ -22,7 +22,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-ALLOWED_PARAMS = {"level", "top_k", "gap", "auto_margin", "normalize"}
+ALLOWED_PARAMS = {
+    "level", "top_k", "gap", "auto_margin", "normalize", "chunking", "rerank", "candidates", "fusion"
+}
 
 
 class EndpointHandler:
@@ -58,6 +60,7 @@ class EndpointHandler:
                 "depth": m.depth,
                 "score": round(m.score, 4),
                 "similarity": round(m.similarity, 4),
+                "judge": None if m.judge is None else round(m.judge, 4),
                 "title": m.title,
                 "path": m.text,
             }

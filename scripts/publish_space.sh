@@ -30,10 +30,12 @@ REPO=${REPO:-$USER_NAME/text2ipc}
 OUT=space/$(basename "$REPO")
 LANG_ARGS=(); for l in "${LANGS[@]}"; do LANG_ARGS+=(--lang "$l"); done
 
-uv run t2ipc web-export "$OUT" --version "$VERSION" --model "$MODEL" --repo-id "$REPO" "${LANG_ARGS[@]}"
+EXAMPLES=(); [[ -f evals/demo_examples.jsonl ]] && EXAMPLES=(--examples evals/demo_examples.jsonl)
+uv run t2ipc web-export "$OUT" --version "$VERSION" --model "$MODEL" --repo-id "$REPO" "${LANG_ARGS[@]}" "${EXAMPLES[@]}"
 BUILT=$(python3 -c "import json;print(' '.join(f\"{e['lang']} {e['version']}\" for e in json.load(open('$OUT/manifest.json'))['indexes']))")
 MESSAGE=${MESSAGE:-"text2ipc browser demo: IPC $BUILT ($(git rev-parse --short HEAD 2>/dev/null || echo uncommitted))"}
 uv run hf repos create "$REPO" --repo-type space --space-sdk static $VISIBILITY --exist-ok >/dev/null
 # --delete "*" keeps the Space an exact mirror of the export (drops template files, removed languages)
 uv run hf upload "$REPO" "$OUT" . --repo-type space --delete "*" --commit-message "$MESSAGE"
-echo "published https://huggingface.co/spaces/$REPO"
+TAG=$(scripts/hf_tag.sh "$REPO" space)
+echo "published https://huggingface.co/spaces/$REPO (tag $TAG)"

@@ -10,7 +10,15 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from .config import DEFAULT_HF_REPO, LEVELS, OVERLAY_LANGS, WIPO_LANGS, default_model, home
+from .config import (
+    DEFAULT_HF_REPO,
+    DEFAULT_RERANKER,
+    LEVELS,
+    OVERLAY_LANGS,
+    WIPO_LANGS,
+    default_model,
+    home,
+)
 from .embeddings import get_embedder
 from .index import (
     IpcIndex,
@@ -29,7 +37,7 @@ from .scheme import (
     parse_scheme,
 )
 from .versions import list_local_versions, list_remote_versions, resolve_version
-from .web.export import WEB_DEFAULT_MODEL
+from .web.export import WEB_DEFAULT_MODEL, WEB_DEFAULT_RERANKER
 
 app = typer.Typer(help="Map free text to IPC symbols.", no_args_is_help=True)
 console = Console()
@@ -170,22 +178,46 @@ def classify(
     lang: str = typer.Option("EN"),
     model: str = typer.Option(None),
     gap: float = typer.Option(None, help="Drop results more than this below the best score"),
+    chunking: str = typer.Option(
+        "mean", help="Long texts: 'mean' of chunk vectors, 'max' over chunks, or 'truncate'"
+    ),
+    rerank: bool = typer.Option(False, help="Second stage: cross-encoder over the candidates"),
+    reranker: str = typer.Option(None, help=f"Reranker spec (default {DEFAULT_RERANKER})"),
+    candidates: int = typer.Option(None, help="First-stage list the reranker judges"),
     as_json: bool = typer.Option(False, "--json"),
 ):
-    """Rank IPC symbols for a text."""
+    """Rank IPC symbols for a text of any length (a whole description is chunked)."""
     from .classifier import IpcClassifier
 
     if text == "-":
         text = sys.stdin.read()
     clf = IpcClassifier(version, lang=lang, model=model)
-    matches = clf.classify(text, level=level, top_k=top_k, gap=gap)
+    matches = clf.classify(
+        text,
+        level=level,
+        top_k=top_k,
+        gap=gap,
+        chunking=chunking,
+        rerank=reranker or rerank,
+        candidates=candidates,
+    )
     if as_json:
         print(json.dumps([m.__dict__ | {"pretty": m.pretty} for m in matches], indent=2))
         return
-    columns = ("#", "symbol", "score", "sim", "section > ... > entry")
-    table = Table(*columns, title=f"IPC {clf.version} {clf.lang}")
+    reranked = rerank or reranker
+    columns = (
+        "#",
+        "symbol",
+        "score",
+        "sim",
+        *(("judge",) if reranked else ()),
+        "section > ... > entry",
+    )
+    chunks = f", {clf.last_chunks} chunks" if clf.last_chunks > 1 else ""
+    table = Table(*columns, title=f"IPC {clf.version} {clf.lang}{chunks}")
     for i, m in enumerate(matches, 1):
-        table.add_row(str(i), m.pretty, f"{m.score:.3f}", f"{m.similarity:.3f}", m.text)
+        judge = (f"{m.judge:.2f}",) if reranked else ()
+        table.add_row(str(i), m.pretty, f"{m.score:.3f}", f"{m.similarity:.3f}", *judge, m.text)
     console.print(table)
 
 
@@ -236,6 +268,8 @@ def eval_cmd(
     model: str = typer.Option(None),
     limit: int = typer.Option(None, help="Only the first N cases"),
     show_misses: int = typer.Option(0, help="Print this many misses at the target level"),
+    rerank: bool = typer.Option(False, help="Second stage: cross-encoder over the candidates"),
+    reranker: str = typer.Option(None, help=f"Reranker spec (default {DEFAULT_RERANKER})"),
 ):
     """Hit-rate at each hierarchy level against office-assigned symbols."""
     from .classifier import IpcClassifier
@@ -246,7 +280,7 @@ def eval_cmd(
     with console.status("evaluating...") as status:
         result = evaluate(
             items,
-            lambda t: clf.classify(t, level=level, top_k=top_k),
+            lambda t: clf.classify(t, level=level, top_k=top_k, rerank=reranker or rerank),
             level=level,
             top_k=top_k,
             progress=lambda i, n: status.update(f"evaluating {i}/{n}"),
@@ -254,6 +288,7 @@ def eval_cmd(
     console.print(
         f"[bold]{cases.name}[/] n={result.n} version={clf.version} lang={clf.lang} "
         f"model={clf.index.meta.model}"
+        + (f" reranker={clf.reranker(reranker or True).name}" if (rerank or reranker) else "")
     )
     console.print(result.table())
     for case_id, gold, preds in result.misses[:show_misses]:
@@ -314,6 +349,13 @@ def web_export(
     web_model: str = typer.Option(None, help="transformers.js model id (default: Xenova twin)"),
     web_dtype: str = typer.Option("q8", help="ONNX weights the browser loads: q8, fp16, fp32"),
     repo_id: str = typer.Option(None, help="Space id written into the README"),
+    examples: Path = typer.Option(
+        None, help="JSONL of eval cases (title + abstract + office IPC) shown as examples"
+    ),
+    web_reranker: str = typer.Option(
+        WEB_DEFAULT_RERANKER,
+        help="transformers.js cross-encoder for the Rerank option; '' for none",
+    ),
 ):
     """Assemble a static Hugging Face Space that classifies in the browser (ADR 0007)."""
     from .web import export_web_demo
@@ -326,6 +368,8 @@ def web_export(
         repo_id=repo_id or "<user>/text2ipc",
         web_model=web_model,
         web_dtype=web_dtype,
+        examples=examples,
+        web_reranker=web_reranker or None,
     )
     total = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
     console.print(f"static Space assembled at {path} ({total / 1e6:.0f} MB)")

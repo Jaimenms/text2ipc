@@ -207,3 +207,132 @@ browser sits further from the PyTorch fp32 vectors than e5-small did (cosine 0.9
 0.994 against 0.996 to 0.998 on six probe texts), enough to swap near-tied neighbours
 such as the 2nd and 3rd result of the fire-hose example; the top result was the same
 on every probe.
+
+## Auto level honours `top_k` (e5-base, PT scheme, `--level auto --top-k 10`)
+
+`auto_roots` was fixed at 5, so the auto level never returned more than 5 results
+whatever `top_k` said (the browser demo made this visible: Top 5, 8 or 12 gave the same
+5 rows). It now defaults to `max(5, top_k)`. hit@1 to hit@5 are unchanged by
+construction; hit@10 rises because there are results beyond the fifth.
+
+| cases | section @10 | class @10 | subclass @10 | group @10 | mrr subclass |
+|---|---|---|---|---|---|
+| 2905 titles, before | 82.4 | 66.1 | 51.6 | 26.8 | 0.363 |
+| 2905 titles, after | 87.4 | 76.3 | 62.6 | 31.7 | 0.378 |
+| 2100 abstracts, before | 81.7 | 61.4 | 45.8 | 19.2 | 0.297 |
+| 2100 abstracts, after | 91.0 | 72.0 | 58.3 | 25.0 | 0.314 |
+
+## Path support and beam, revisited with the PT scheme (1,000-case sample, `--level subgroup --top-k 10`)
+
+The defaults (own 0.7, path 0.3, beam 5/10/20/40) came from sweeps on the English
+scheme with e5-small. On the Portuguese scheme, for both models, path support lowers
+every number and the beam width changes nothing (default, wide 8/30/60/120 and no
+beam agree to 0.3 points). Run on 2026-10-08, not yet adopted as defaults.
+
+| model | weights | subclass @1 / @10 | group @1 / @10 | subgroup @1 / @10 |
+|---|---|---|---|---|
+| e5-base | own .7 path .3 (current) | 20.9 / 35.8 | 10.0 / 21.3 | 1.8 / 5.4 |
+| e5-base | own .85 path .15 | 22.5 / 39.6 | 10.7 / 23.8 | 2.2 / 6.6 |
+| e5-base | own 1.0 path 0 | 23.5 / 41.7 | 11.1 / 25.0 | 2.4 / 6.7 |
+| e5-small | own .7 path .3 (current) | 17.0 / 28.7 | 6.9 / 13.7 | 1.4 / 3.5 |
+| e5-small | own .85 path .15 | 18.3 / 31.6 | 7.4 / 15.8 | 1.6 / 4.2 |
+| e5-small | own 1.0 path 0 | 20.1 / 34.1 | 8.4 / 17.0 | 1.7 / 4.6 |
+
+Why it hurts here: the Portuguese section and class titles are generic and close to
+every query, so their mean (path support) rewards branches such as A62C (fire
+fighting) for texts about antibodies or solar panels; see the hub note in ADR 0007.
+
+### Candidate recall for a reranker (e5-base, PT, flat cosine, `--top-k 100`)
+
+What a second-stage reranker could reach at @1 if it were perfect on the candidates:
+
+| level | hit@1 | hit@10 | hit@25 | hit@50 | hit@100 |
+|---|---|---|---|---|---|
+| subclass | 23.5 | 59.7 | 64.2 | 64.3 | 64.3 |
+| group | 11.1 | 36.2 | 44.7 | 45.7 | 45.7 |
+| subgroup | 2.4 | 7.5 | 11.9 | 15.0 | 18.2 |
+
+With the current defaults the same ceilings are 55.6 / 39.7 / 15.3. Recall stops
+growing after 25 to 50 candidates at subclass and group level: the candidates for a
+reranker are there, the first stage simply orders them badly.
+
+## Path weight set to 0 by default (e5-base, PT scheme, both files, `--top-k 10`)
+
+Adopted on 2026-10-08 after the sweep above: `Weights(own=1.0, path=0.0)` in the
+package and in the browser scorer. Before/after on the two standard files, at the
+subgroup level and at the auto level.
+
+| cases, level | subclass @1 / @10 | group @1 / @10 | subgroup @1 / @10 | mrr subclass |
+|---|---|---|---|---|
+| 2905 titles, subgroup, before | 27.7 / 40.1 | 14.5 / 26.5 | 1.6 / 9.3 | 0.330 |
+| 2905 titles, subgroup, after | 29.4 / 45.7 | 14.7 / 29.9 | 2.4 / 13.0 | 0.364 |
+| 2905 titles, auto, before | 27.7 / 62.6 | 14.7 / 31.7 | 2.4 / 6.9 | 0.378 |
+| 2905 titles, auto, after | 28.7 / 65.1 | 14.5 / 32.9 | 2.9 / 7.8 | 0.398 |
+| 2100 abstracts, subgroup, before | 20.5 / 33.6 | 9.3 / 17.8 | 0.5 / 1.8 | 0.260 |
+| 2100 abstracts, subgroup, after | 23.2 / 38.4 | 11.0 / 20.1 | 0.9 / 2.5 | 0.292 |
+| 2100 abstracts, auto, before | 20.5 / 58.3 | 9.5 / 25.0 | 0.9 / 2.9 | 0.314 |
+| 2100 abstracts, auto, after | 23.2 / 61.6 | 10.8 / 27.3 | 1.1 / 3.6 | 0.341 |
+
+Every cell but one (group@1 at auto on titles, -0.2) improves; subclass@10 gains 5 to
+6 points at the subgroup level. The demo examples still agree with INPI at rank 1.
+
+## Combining the parts of one application (e5-base, PT scheme, 500 cases with title and abstract)
+
+Proxy for the multi-chunk question (the evals hold no full descriptions): the 500
+cases of the 1,000-case sample that have both a title and an abstract, `--level
+subgroup --top-k 10`, path weight 0. Run on 2026-10-08.
+
+| query | subclass @1 / @10 | group @1 / @10 | subgroup @1 / @10 |
+|---|---|---|---|
+| abstract only (the eval text) | 22.0 / 38.2 | 10.0 / 20.4 | 1.2 / 4.6 |
+| title only | 23.2 / 40.8 | 10.2 / 24.2 | 2.4 / 9.0 |
+| title + abstract, one string | 22.0 / 38.6 | 9.8 / 19.4 | 1.2 / 4.0 |
+| mean of the title and abstract vectors | 26.6 / 42.6 | 11.8 / 22.6 | 3.0 / 6.8 |
+| max per entry over the two vectors | 23.2 / 43.0 | 10.4 / 23.2 | 1.0 / 7.6 |
+
+Concatenating buys nothing; averaging the two vectors adds 4.6 points at subclass@1
+over the abstract alone. Adopted: paragraphs are embedded separately and averaged
+(`chunking="mean"`), with a paragraph over the token limit cut into sentence chunks.
+`chunking="max"` is kept as an option for texts that cover several inventions. The
+standard eval files are unaffected (their text is a single paragraph).
+
+## Cross-encoder reranking (bge-reranker-v2-m3 over the top-50 of e5-base, PT scheme, 991 cases)
+
+First stage: default search at the subgroup level with `top_k=50` (path weight 0,
+distinct branches). Second stage: `BAAI/bge-reranker-v2-m3` (568M parameters, fp16 on
+MPS, 74 pairs per second, `max_length=768`) scores every (query, path text) pair; the
+list is reordered and cut to 10. Nine cases of the 1,000-case sample were lost to a
+timeout and are excluded from every row. Run on 2026-10-08.
+
+| ordering | subclass @1 / @3 / @10 | group @1 / @3 / @10 | subgroup @1 / @3 / @10 |
+|---|---|---|---|
+| first stage (cosine) | 23.6 / 38.6 / 43.1 | 11.2 / 21.2 / 26.1 | 2.4 / 4.2 / 7.6 |
+| cross-encoder only | 32.3 / 45.3 / 47.9 | 16.0 / 27.2 / 30.6 | 3.0 / 6.1 / 9.7 |
+| score × (0.5 + 0.5 · sigmoid(ce)) | 31.6 / 45.6 / 48.2 | 16.6 / 27.2 / 30.5 | 3.3 / 6.2 / 9.7 |
+| score × sigmoid(ce) | 32.2 / 45.3 / 47.9 | 16.2 / 27.3 / 30.5 | 3.0 / 6.1 / 9.7 |
+| cross-encoder as tie-break only | 28.8 / 43.5 / 47.3 | 14.6 / 24.9 / 29.4 | 3.0 / 5.2 / 8.8 |
+| reciprocal rank fusion | 29.2 / 44.9 / 48.4 | 14.9 / 26.1 / 30.7 | 3.3 / 5.5 / 9.8 |
+
+Titles gain more than abstracts (subclass@1 25.0 to 35.3 on titles, 22.2 to 29.3 on
+abstracts). Multiplying the first-stage score by the judge works, as proposed; the
+`0.5 + 0.5 · sigmoid` form keeps the cosine score meaningful and is the most even
+across levels, so it is the default fusion. The candidate ceiling (hit@50 of 64% at
+subclass) is far from reached: the reranker is good, not perfect.
+
+### The browser candidate: jina-reranker-v2-base-multilingual in ONNX, 8-bit (same 300 cases)
+
+`jinaai/jina-reranker-v2-base-multilingual` (278M parameters) scored the same
+candidate lists through its 8-bit ONNX export on CPU (24 pairs per second with
+onnxruntime, `max_length=768`); the bge rows are the first 300 cases of the run above.
+
+| reranker, ordering | subclass @1 / @3 / @10 | group @1 / @3 / @10 | subgroup @1 / @3 / @10 |
+|---|---|---|---|
+| none (first stage) | 27.0 / 39.3 / 43.0 | 14.7 / 23.3 / 27.0 | 4.0 / 6.0 / 7.3 |
+| bge-reranker-v2-m3, blend | 31.7 / 46.3 / 48.7 | 17.7 / 27.3 / 30.7 | 4.3 / 6.3 / 9.0 |
+| jina-reranker-v2 q8, blend | 32.3 / 43.7 / 47.0 | 18.0 / 26.0 / 29.7 | 3.0 / 6.3 / 10.7 |
+| jina-reranker-v2 q8, judge only | 31.0 / 44.3 / 46.3 | 16.3 / 26.0 / 29.0 | 2.0 / 5.7 / 10.7 |
+
+Equal within noise at @1, a point or two behind at @3 and @10, at half the size and
+in a format a browser runs: the Space ships jina in 8 bits as an opt-in second stage.
+The package keeps bge-reranker-v2-m3 as its default (its PyTorch code loads with the
+current transformers; jina's remote code does not).

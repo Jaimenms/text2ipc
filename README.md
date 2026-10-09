@@ -2,8 +2,9 @@
 
 Map free text, typically a patent abstract, to a ranked list of International Patent
 Classification (IPC) symbols. Every IPC entry is embedded once from its full path
-(section > class > subclass > group > subgroups), and a query is scored against the
-hierarchy rather than a flat list. Portuguese first; English and French schemes built in.
+(section > class > subclass > group > subgroups), a query of any length is embedded by
+paragraph and sentence chunks, and an optional cross-encoder re-judges the best
+candidates. Portuguese first; English and French schemes built in.
 
 Study repository: the package is meant for PyPI, the docs record every decision and
 every measurement along the way.
@@ -20,6 +21,7 @@ Use the published Portuguese index (IPC 2026, `intfloat/multilingual-e5-base`):
 pip install "text2ipc[st] @ git+https://github.com/Jaimenms/text2ipc"
 t2ipc download                     # index + scheme from huggingface.co/jaimenms/text2ipc-pt
 t2ipc classify "Aparelho para combate a incêndios com mangueira flexível" --lang PT --level group
+t2ipc classify "..." --lang PT --level group --rerank    # + cross-encoder second stage
 ```
 
 ```python
@@ -83,6 +85,8 @@ repository [jaimenms/text2ipc-pt](https://huggingface.co/jaimenms/text2ipc-pt).
 │   │   └── migrate.py            legacy CSV -> Parquet, hash-verified
 │   ├── search/scorer.py          flat cosine + path/subtree support, beam descent,
 │   │                             auto level, distinct-branch post-processing
+│   ├── chunking.py               paragraphs and sentence chunks for texts over the token limit
+│   ├── rerank/                   Reranker protocol; cross-encoder (bge-reranker-v2-m3) and hash backends
 │   ├── eval/                     cases, RPI parsers (XML and legacy text), hit@k harness
 │   ├── hf/                       Inference Endpoints handler and repository export
 │   └── web/                      static Space export; static/scorer.js is the port of scorer.py
@@ -110,6 +114,9 @@ uv run python scripts/make_notebooks.py && uv run jupyter nbconvert --to noteboo
 scripts/publish_hf.sh --lang PT                      # endpoint repo on the Hub
 scripts/publish_space.sh                             # browser demo (static Space)
 ```
+
+License: [MIT](LICENSE). Use, copy and modify freely, keeping the copyright notice
+that names the author.
 
 Data sources: IPC master files by [WIPO](https://www.wipo.int/classifications/ipc/en/),
 Portuguese titles by [INPI Brazil](https://ipc.inpi.gov.br/classifications/ipc/ipcpub/),

@@ -2,16 +2,24 @@
 // embedder with transformers.js, embed the query, rank with scorer.js, and draw the
 // merged paths of the results as a tree. Everything stays in the visitor's browser;
 // no request carries the text anywhere.
-import { env, pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1";
+import {
+  AutoTokenizer,
+  XLMRobertaModel,
+  env,
+  pipeline,
+} from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1";
 import {
   AUTO_LEVEL,
   LEVELS,
   buildIndex,
   chainOf,
   formatSymbol,
+  meanVector,
   normalizeQuery,
   parseVectors,
   rank,
+  rerankMatches,
+  splitText,
 } from "./scorer.js";
 
 env.allowLocalModels = false;
@@ -22,36 +30,53 @@ const ui = {
   lang: $("lang"),
   level: $("level"),
   topK: $("topk"),
+  rerank: $("rerank"),
+  rerankLabel: $("rerank-label"),
   run: $("run"),
   status: $("status"),
   graph: $("graph"),
   legend: $("legend"),
   tip: $("tip"),
   results: $("results"),
+  gold: $("gold"),
   examples: $("examples"),
   meta: $("meta"),
 };
 
-const EXAMPLES = [
-  { lang: "PT", text: "Aparelho para combate a incêndios com mangueira flexível reforçada" },
-  {
-    lang: "PT",
-    text: "Composição farmacêutica compreendendo um anticorpo monoclonal para o tratamento de câncer de mama",
-  },
-  { lang: "EN", text: "Hand-operated hoe with two blades for weeding between rows of plants" },
-  {
-    lang: "EN",
-    text: "Method for transmitting data packets between nodes of a wireless mesh network with adaptive routing",
-  },
-];
 
 const state = {
   manifest: null,
+  examples: [], // real applications from the evals: title, abstract, office IPC
+  gold: null, // the example whose text is in the box, if unchanged
   indexes: new Map(), // lang -> built index
+  indexLoads: new Map(), // lang -> promise of the load in flight (clicks during loading reuse it)
   embedder: null,
+  embedderLoad: null, // promise of the model load in flight
+  reranker: null, // {tokenizer, model} once loaded
+  rerankerLoad: null,
   progress: new Map(), // label -> {loaded, total}
+  pending: 0, // loads in flight that have not reported progress yet
   error: null,
 };
+
+const LEVEL_LEN = { section: 1, class: 3, subclass: 4 };
+
+/** Canonical symbol cut to a level, as text2ipc.eval.harness.truncate does. */
+function truncateSymbol(symbol, level) {
+  if (level in LEVEL_LEN) return symbol.slice(0, LEVEL_LEN[level]);
+  if (level === "group") return symbol.length === 14 ? symbol.slice(0, 8) + "000000" : symbol;
+  return symbol;
+}
+
+/** Does a result agree with an office-assigned symbol at the result's own level? */
+function agreesWithGold(m) {
+  if (!state.gold) return false;
+  return state.gold.ipc.some((g) => truncateSymbol(g, m.level) === truncateSymbol(m.symbol, m.level));
+}
+
+function exampleText(ex) {
+  return `${ex.title}\n\n${ex.abstract}`;
+}
 
 // -- status -------------------------------------------------------------------
 
@@ -68,7 +93,8 @@ function renderStatus(message) {
   }
   ui.status.className = "status";
   if (!state.progress.size) {
-    ui.status.textContent = message || "Ready. Everything runs in this browser tab.";
+    ui.status.textContent =
+      message || (state.pending ? "Loading…" : "Ready. Everything runs in this browser tab.");
     return;
   }
   for (const [label, { loaded, total }] of state.progress) {
@@ -123,8 +149,25 @@ function entryFor(lang) {
   return state.manifest.indexes.find((e) => e.lang === lang) || state.manifest.indexes[0];
 }
 
-async function loadIndex(entry) {
-  if (state.indexes.has(entry.lang)) return state.indexes.get(entry.lang);
+function loadIndex(entry) {
+  if (state.indexes.has(entry.lang)) return Promise.resolve(state.indexes.get(entry.lang));
+  if (!state.indexLoads.has(entry.lang)) {
+    state.pending += 1;
+    const load = fetchIndex(entry)
+      .catch((err) => {
+        state.indexLoads.delete(entry.lang); // let a later click retry
+        throw err;
+      })
+      .finally(() => {
+        state.pending -= 1;
+        renderStatus();
+      });
+    state.indexLoads.set(entry.lang, load);
+  }
+  return state.indexLoads.get(entry.lang);
+}
+
+async function fetchIndex(entry) {
   const label = `IPC ${entry.version} ${entry.lang}`;
   const [schemeBuf, vecBuf] = await Promise.all([
     fetchWithProgress(entry.scheme, `${label} scheme`),
@@ -141,28 +184,126 @@ async function loadIndex(entry) {
   return index;
 }
 
-async function loadEmbedder() {
-  if (state.embedder) return state.embedder;
-  const { web_model: model, web_dtype: dtype } = state.manifest;
-  const label = `model ${model} (${dtype})`;
-  state.embedder = await pipeline("feature-extraction", model, {
-    dtype,
-    progress_callback: (e) => {
+function loadEmbedder() {
+  if (state.embedder) return Promise.resolve(state.embedder);
+  if (!state.embedderLoad) {
+    const { web_model: model, web_dtype: dtype } = state.manifest;
+    const label = `model ${model} (${dtype})`;
+    state.pending += 1;
+    state.embedderLoad = pipeline("feature-extraction", model, {
+      dtype,
+      progress_callback: (e) => {
+        if (e.status === "progress" && e.file && e.file.endsWith(".onnx")) {
+          setProgress(label, e.loaded, e.total);
+        }
+      },
+    })
+      .then((p) => {
+        state.embedder = p;
+        return p;
+      })
+      .catch((err) => {
+        state.embedderLoad = null; // let a later click retry
+        throw err;
+      })
+      .finally(() => {
+        state.pending -= 1;
+        doneProgress(label);
+      });
+  }
+  return state.embedderLoad;
+}
+
+function loadReranker() {
+  if (state.reranker) return Promise.resolve(state.reranker);
+  if (!state.rerankerLoad) {
+    const { web_model: model, dtype } = state.manifest.reranker;
+    const label = `reranker ${model} (${dtype})`;
+    const progress = (e) => {
       if (e.status === "progress" && e.file && e.file.endsWith(".onnx")) {
         setProgress(label, e.loaded, e.total);
       }
-    },
-  });
-  doneProgress(label);
-  return state.embedder;
+    };
+    // jina's config carries no model_type, so the class is named, as its model card does
+    const t0 = performance.now();
+    const stage = (what) => console.info(`reranker: ${what} at ${Math.round(performance.now() - t0)} ms`);
+    const load = async () => {
+      const tokenizer = await AutoTokenizer.from_pretrained(model);
+      stage("tokenizer ready");
+      const m = await XLMRobertaModel.from_pretrained(model, { dtype, progress_callback: progress });
+      stage("model ready");
+      return [tokenizer, m];
+    };
+    state.pending += 1;
+    state.rerankerLoad = load()
+      .catch((err) => {
+        // Some browsers cannot store a 280 MB response in the Cache API and the
+        // loader fails with a network error; retry without the cache.
+        console.warn("reranker load failed, retrying without the browser cache", err);
+        env.useBrowserCache = false;
+        return load().finally(() => {
+          env.useBrowserCache = true;
+        });
+      })
+      .then(([tokenizer, m]) => {
+        state.reranker = { tokenizer, model: m };
+        return state.reranker;
+      })
+      .catch((err) => {
+        state.rerankerLoad = null;
+        throw err;
+      })
+      .finally(() => {
+        state.pending -= 1;
+        doneProgress(label);
+      });
+  }
+  return state.rerankerLoad;
 }
 
-async function embed(text) {
-  const out = await state.embedder(state.manifest.query_prefix + text, {
-    pooling: "mean",
-    normalize: true,
-  });
-  return out.data;
+/** Cross-encoder logits for (text, path text) pairs, a few pairs at a time. */
+async function judge(text, matches) {
+  const { tokenizer, model } = await loadReranker();
+  const { max_length: maxLength } = state.manifest.reranker;
+  const logits = [];
+  const batch = 4;
+  const t0 = performance.now();
+  for (let i = 0; i < matches.length; i += batch) {
+    const part = matches.slice(i, i + batch);
+    const inputs = tokenizer(part.map(() => text), {
+      text_pair: part.map((m) => m.text),
+      padding: true,
+      truncation: true,
+      max_length: maxLength,
+    });
+    const out = await model(inputs);
+    const data = out.logits.data;
+    for (let j = 0; j < part.length; j++) logits.push(Number(data[j]));
+    renderStatus(`Judging candidates ${Math.min(i + batch, matches.length)}/${matches.length}…`);
+    console.info(`reranker: judged ${logits.length}/${matches.length} at ${Math.round(performance.now() - t0)} ms`);
+  }
+  return logits;
+}
+
+/**
+ * Query vector for a text of any length. Paragraphs are embedded separately and a
+ * paragraph over the model's token limit is cut into sentence chunks (scorer.js
+ * splitText, a port of text2ipc/chunking.py); the unit-length mean of the pieces is
+ * the query, as IpcClassifier does with chunking="mean".
+ */
+async function embedText(text) {
+  const { query_prefix: prefix, max_tokens: limit } = state.manifest;
+  const countTokens = (t) => state.embedder.tokenizer(prefix + t).input_ids.dims[1];
+  const options = { pooling: "mean", normalize: true };
+  const chunks = splitText(text, limit || null, countTokens);
+  if (chunks.length <= 1) {
+    const out = await state.embedder(prefix + text, options);
+    return { query: out.data, chunks: 1 };
+  }
+  const out = await state.embedder(chunks.map((c) => prefix + c), options);
+  const dim = out.dims[out.dims.length - 1];
+  const vectors = chunks.map((_, i) => out.data.subarray(i * dim, (i + 1) * dim));
+  return { query: meanVector(vectors), chunks: chunks.length };
 }
 
 // -- classify -----------------------------------------------------------------
@@ -194,24 +335,33 @@ async function classify() {
 async function classifyOnce() {
   const text = normalizeQuery(ui.text.value || "");
   if (!text) return;
+  if (state.gold && (ui.text.value || "").trim() !== exampleText(state.gold).trim()) state.gold = null;
   try {
     const entry = entryFor(ui.lang.value);
     const [index] = await Promise.all([loadIndex(entry), loadEmbedder()]);
     renderStatus("Embedding...");
     const t0 = performance.now();
-    const query = await embed(text);
+    const { query, chunks } = await embedText(text);
     const t1 = performance.now();
-    const { matches, sims } = rank(index, query, {
-      level: ui.level.value,
-      topK: Number(ui.topK.value),
-    });
+    const topK = Number(ui.topK.value);
+    const rerank = Boolean(state.manifest.reranker) && ui.rerank.checked;
+    const candidates = rerank ? Math.max(state.manifest.reranker.candidates, topK) : topK;
+    let { matches, sims } = rank(index, query, { level: ui.level.value, topK: candidates });
     const t2 = performance.now();
+    let judged = "";
+    if (rerank && matches.length) {
+      const logits = await judge(text, matches);
+      matches = rerankMatches(matches, logits, state.manifest.reranker.fusion, topK);
+      judged = ` · judged ${logits.length} in ${Math.round(performance.now() - t2)} ms`;
+    }
     renderGraph(index, matches, sims, entry);
-    renderResults(matches);
+    renderResults(matches, rerank);
+    renderGold(matches);
     ui.meta.textContent =
       `IPC ${entry.version} ${entry.lang} · ${entry.rows.toLocaleString()} entries · ` +
       `${state.manifest.web_model} ${state.manifest.web_dtype} · ` +
-      `embed ${Math.round(t1 - t0)} ms · score ${Math.round(t2 - t1)} ms`;
+      `${chunks > 1 ? `${chunks} chunks · ` : ""}` +
+      `embed ${Math.round(t1 - t0)} ms · score ${Math.round(t2 - t1)} ms${judged}`;
     renderStatus();
     updateUrl(text, entry.lang);
   } catch (err) {
@@ -221,7 +371,7 @@ async function classifyOnce() {
   }
 }
 
-function renderResults(matches) {
+function renderResults(matches, reranked = false) {
   ui.results.innerHTML = "";
   if (!matches.length) {
     ui.results.textContent = "No result.";
@@ -229,7 +379,9 @@ function renderResults(matches) {
   }
   const table = document.createElement("table");
   table.innerHTML =
-    "<thead><tr><th>#</th><th>Symbol</th><th>Level</th><th>Score</th><th>Sim.</th><th>Section &gt; … &gt; entry</th></tr></thead>";
+    "<thead><tr><th>#</th><th>Symbol</th><th>Level</th><th>Score</th><th>Sim.</th>" +
+    (reranked ? "<th>Judge</th>" : "") +
+    "<th>Section &gt; … &gt; entry</th></tr></thead>";
   const body = document.createElement("tbody");
   matches.forEach((m, i) => {
     const tr = document.createElement("tr");
@@ -239,15 +391,24 @@ function renderResults(matches) {
       m.level,
       m.score.toFixed(3),
       m.similarity.toFixed(3),
+      ...(reranked ? [m.judge.toFixed(2)] : []),
       m.text,
     ];
     cells.forEach((v, j) => {
       const td = document.createElement("td");
       td.textContent = v;
       if (j === 1) td.className = "symbol";
-      if (j === 5) td.className = "path";
+      if (j === cells.length - 1) td.className = "path";
       tr.appendChild(td);
     });
+    if (agreesWithGold(m)) {
+      tr.className = "gold";
+      const tick = document.createElement("span");
+      tick.className = "tick";
+      tick.textContent = " ✓";
+      tick.title = "Agrees with the symbol INPI assigned, at this level";
+      tr.children[1].appendChild(tick);
+    }
     body.appendChild(tr);
   });
   table.appendChild(body);
@@ -385,7 +546,8 @@ function renderGraph(index, matches, sims, entry) {
       svgEl("text", { x: n.w / 2, y: G.nodeH / 2 + 4, "text-anchor": "middle" }, n.label),
     );
     if (isResult) {
-      g.append(svgEl("text", { class: "badge", x: n.w + 8, y: G.nodeH / 2 + 4 }, `#${n.rank}`));
+      const badge = `#${n.rank}${agreesWithGold(n.match) ? " ✓" : ""}`;
+      g.append(svgEl("text", { class: "badge", x: n.w + 8, y: G.nodeH / 2 + 4 }, badge));
     }
     const info = tipInfo(index, n, sims, entry);
     g.setAttribute("aria-label", info.aria);
@@ -413,8 +575,9 @@ function tipInfo(index, n, sims, entry) {
   const lines = [];
   if (n.match) {
     lines.push({ strong: `score ${n.match.score.toFixed(3)}`, rest: ` · result #${n.rank}` });
+    const judged = n.match.judge === undefined ? "" : ` · judge ${n.match.judge.toFixed(2)}`;
     lines.push({
-      rest: `similarity ${n.match.similarity.toFixed(3)} · path support ${n.match.pathSupport.toFixed(3)}`,
+      rest: `similarity ${n.match.similarity.toFixed(3)} · path support ${n.match.pathSupport.toFixed(3)}${judged}`,
     });
   } else {
     lines.push({ strong: `similarity ${sims[n.i].toFixed(3)}`, rest: "" });
@@ -487,6 +650,21 @@ function hideTip() {
   ui.tip.hidden = true;
 }
 
+function renderGold(matches) {
+  ui.gold.innerHTML = "";
+  if (!state.gold) return;
+  const g = state.gold;
+  const hits = matches.filter(agreesWithGold).length;
+  const strong = document.createElement("strong");
+  strong.textContent = `INPI assigned: ${g.ipc.map(formatSymbol).join(", ")}`;
+  ui.gold.appendChild(strong);
+  ui.gold.appendChild(
+    document.createTextNode(
+      ` (${g.source}). ${hits ? `${hits} of ${matches.length} results agree at their level (✓).` : "No result agrees at its level."}`,
+    ),
+  );
+}
+
 function updateUrl(text, lang) {
   const params = new URLSearchParams({ lang, level: ui.level.value, q: text });
   history.replaceState(null, "", `?${params}`);
@@ -504,18 +682,26 @@ function fillSelect(select, values, labels) {
   });
 }
 
+async function loadExamples() {
+  try {
+    const res = await fetch("examples.json");
+    if (res.ok) state.examples = await res.json();
+  } catch {
+    state.examples = [];
+  }
+}
+
 function renderExamples() {
   ui.examples.innerHTML = "";
-  const langs = new Set(state.manifest.indexes.map((e) => e.lang));
-  for (const ex of EXAMPLES.filter((e) => langs.has(e.lang))) {
+  for (const ex of state.examples) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "chip";
-    b.textContent = `${ex.lang}: ${ex.text.slice(0, 48)}${ex.text.length > 48 ? "…" : ""}`;
-    b.title = ex.text;
+    b.textContent = ex.title.length > 56 ? `${ex.title.slice(0, 56)}…` : ex.title;
+    b.title = `${ex.abstract.slice(0, 160)}…  INPI: ${ex.ipc.map(formatSymbol).join(", ")}`;
     b.addEventListener("click", () => {
-      ui.text.value = ex.text;
-      ui.lang.value = ex.lang;
+      ui.text.value = exampleText(ex);
+      state.gold = ex;
       classify();
     });
     ui.examples.appendChild(b);
@@ -540,6 +726,9 @@ async function main() {
   );
   fillSelect(ui.level, [AUTO_LEVEL, ...LEVELS]);
   ui.level.value = "group";
+  if (!m.reranker) ui.rerankLabel.hidden = true;
+  else ui.rerankLabel.title = `${m.reranker.web_model} (${m.reranker.dtype}) re-judges the top ${m.reranker.candidates}; 280 MB once, then some seconds per query`;
+  await loadExamples();
   renderExamples();
 
   const params = new URLSearchParams(location.search);

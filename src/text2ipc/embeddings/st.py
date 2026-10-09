@@ -62,6 +62,22 @@ class SentenceTransformerEmbedder:
     def embed_query(self, text: str) -> np.ndarray:
         return self.embed_passages_raw([self._query_prefix + text])[0]
 
+    def embed_queries(self, texts: Sequence[str]) -> np.ndarray:
+        if not texts:
+            return np.zeros((0, self.dim), dtype=np.float32)
+        return self.embed_passages_raw([self._query_prefix + t for t in texts])
+
+    @property
+    def max_tokens(self) -> int | None:
+        limit = getattr(self._model, "max_seq_length", None)
+        return int(limit) if limit else None
+
+    def count_tokens(self, text: str) -> int:
+        ids = self._model.tokenizer(
+            self._query_prefix + text, add_special_tokens=True, truncation=False
+        )["input_ids"]
+        return len(ids)
+
     def embed_passages_raw(self, texts: Sequence[str]) -> np.ndarray:
         out = self._model.encode(list(texts), normalize_embeddings=True, convert_to_numpy=True)
         return normalize(out)

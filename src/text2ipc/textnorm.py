@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+import re
+
+_PARAGRAPH = re.compile(r"\n\s*\n")
+
+
+def paragraphs(text: str) -> list[str]:
+    """Non-empty parts separated by a blank line; single newlines do not split."""
+    return [p for p in _PARAGRAPH.split(text) if p.strip()]
+
 
 def collapse_whitespace(text: str) -> str:
-    return " ".join(text.split())
+    """Collapse runs of whitespace inside each paragraph; keep blank lines as breaks."""
+    return "\n\n".join(" ".join(p.split()) for p in paragraphs(text))
 
 
 def lowercase_if_shouting(text: str, threshold: float = 0.6) -> str:
