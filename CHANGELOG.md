@@ -10,6 +10,8 @@ reverse have their own record under `docs/adr/`; every measurement is in
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-10-09
+
 ### Added
 - English scheme index published as `jaimenms/text2ipc-en` (IPC 20260101), next to
   the Portuguese and French repositories.
@@ -141,7 +143,8 @@ reverse have their own record under `docs/adr/`; every measurement is in
   Ollama, and a hash embedder for tests.
 - Study notebook and documentation: usage, methodology, eval log, ADRs.
 
-[Unreleased]: https://github.com/Jaimenms/text2ipc/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/Jaimenms/text2ipc/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/Jaimenms/text2ipc/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Jaimenms/text2ipc/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Jaimenms/text2ipc/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Jaimenms/text2ipc/compare/v0.2.0...v0.2.1
