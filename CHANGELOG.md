@@ -17,6 +17,8 @@ reverse have their own record under `docs/adr/`; every measurement is in
 ### Fixed
 - Model cards use example texts in the language of their scheme; the French and
   English cards showed Portuguese examples.
+- Browser demo: the example buttons follow the selected scheme (Portuguese
+  originals for PT, translations of the same four applications for EN and FR).
 
 ## [0.2.3] - 2026-10-09
 

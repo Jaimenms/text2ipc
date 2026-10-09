@@ -249,7 +249,8 @@ def export_web_demo(
 
 
 def load_examples(path: Path) -> list[dict]:
-    """Title and abstract of each case; nothing else reaches the page."""
+    """Language, title and abstract of each case; nothing else reaches the page. The page
+    shows the examples whose language matches the selected scheme."""
     out = []
     for line in Path(path).read_text(encoding="utf-8").splitlines():
         if not line.strip():
@@ -257,7 +258,13 @@ def load_examples(path: Path) -> list[dict]:
         c = json.loads(line)
         if not (c.get("title") and c.get("abstract")):
             raise ValueError(f"example {c.get('id')} needs both a title and an abstract")
-        out.append({"title": c["title"], "abstract": c["abstract"]})
+        out.append(
+            {
+                "lang": (c.get("lang") or "pt").upper(),
+                "title": c["title"],
+                "abstract": c["abstract"],
+            }
+        )
     return out
 
 

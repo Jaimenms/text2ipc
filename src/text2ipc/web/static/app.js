@@ -637,9 +637,12 @@ async function loadExamples() {
   }
 }
 
+/** Example buttons in the language of the selected scheme (all of them as a fallback). */
 function renderExamples() {
   ui.examples.innerHTML = "";
-  for (const ex of state.examples) {
+  const lang = (ui.lang.value || "").toUpperCase();
+  const matching = state.examples.filter((ex) => (ex.lang || "").toUpperCase() === lang);
+  for (const ex of matching.length ? matching : state.examples) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "chip";
@@ -674,7 +677,6 @@ async function main() {
   if (!m.reranker) ui.rerankLabel.hidden = true;
   else ui.rerankLabel.title = `${m.reranker.web_model} (${m.reranker.dtype}) re-judges the top ${m.reranker.candidates} when you click Classify; 280 MB once, then about a second per candidate`;
   await loadExamples();
-  renderExamples();
 
   const params = new URLSearchParams(location.search);
   if (params.get("lang") && m.indexes.some((e) => e.lang === params.get("lang"))) {
@@ -684,9 +686,13 @@ async function main() {
     ui.level.value = params.get("level");
   }
   if (params.get("q")) ui.text.value = params.get("q");
+  renderExamples();
 
   ui.run.addEventListener("click", classify);
-  ui.lang.addEventListener("change", () => loadIndex(entryFor(ui.lang.value)).catch(fail));
+  ui.lang.addEventListener("change", () => {
+    renderExamples();
+    loadIndex(entryFor(ui.lang.value)).catch(fail);
+  });
   window.addEventListener("scroll", hideTip, { passive: true });
 
   try {

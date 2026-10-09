@@ -23,9 +23,10 @@ column. Nothing runs by itself: the example buttons and a `?q=` link only fill t
 text box. That model is licensed CC BY-NC 4.0
 (non-commercial), which suits a demo; the package's default reranker
 (`BAAI/bge-reranker-v2-m3`) is Apache-2.0. The example buttons fill the box
-with the title and abstract of real applications (`evals/demo_examples.jsonl`);
-the page never compares its results with an office's decision, that is what the
-evals are for. Results differ slightly from the package: the
+with the title and abstract of real applications (`evals/demo_examples.jsonl`), in
+the language of the selected scheme: the Portuguese originals for PT, their
+translations for EN and FR. The page never compares its results with an office's
+decision, that is what the evals are for. Results differ slightly from the package: the
 vectors are int8 and the model is 8-bit (ADR 0007, numbers in `docs/evals.md`).
 
 ## 2. Hosted: Hugging Face Inference Endpoint

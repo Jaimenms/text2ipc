@@ -59,6 +59,7 @@ def test_export_writes_examples(mini_home, tmp_path):
         json.dumps(
             {
                 "id": "rpi1:X",
+                "lang": "pt",
                 "text": "a",
                 "ipc": ["A01B0001040000"],
                 "title": "PÁ COM DENTES",
@@ -77,7 +78,7 @@ def test_export_writes_examples(mini_home, tmp_path):
         examples=cases,
     )
     (ex,) = json.loads((out / "examples.json").read_text())
-    assert ex == {"title": "PÁ COM DENTES", "abstract": "Uma pá com dentes."}
+    assert ex == {"lang": "PT", "title": "PÁ COM DENTES", "abstract": "Uma pá com dentes."}
     cases.write_text(json.dumps({"id": "rpi1:Y", "text": "b", "ipc": ["A"], "title": "T"}) + "\n")
     with pytest.raises(ValueError, match="title and an abstract"):
         export_web_demo(
