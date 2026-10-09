@@ -18,6 +18,22 @@ rich>=13.7
 sentence-transformers>=3.0
 """
 
+#: Example texts per scheme language, so each repository's card speaks its language.
+CARD_EXAMPLES: dict[str, tuple[str, str]] = {
+    "PT": (
+        "enxada manual com duas lâminas para capina",
+        "Aparelho para combate a incêndios com mangueira flexível",
+    ),
+    "EN": (
+        "hand hoe with two blades for weeding",
+        "Fire-fighting apparatus with a flexible hose",
+    ),
+    "FR": (
+        "houe à main à deux lames pour le désherbage",
+        "Appareil de lutte contre l'incendie avec tuyau flexible",
+    ),
+}
+
 MODEL_CARD = """---
 license: mit
 language:
@@ -55,7 +71,7 @@ This repository is a **custom Inference Endpoints handler** (`handler.py`). Depl
 an Inference Endpoint and call:
 
 ```json
-{{"inputs": "enxada manual com duas lâminas para capina",
+{{"inputs": "{example_input}",
  "parameters": {{"level": "group", "top_k": 5, "rerank": true}}}}
 ```
 
@@ -89,7 +105,7 @@ model when you enable it.
 ```bash
 pip install "text2ipc[st] @ git+https://github.com/Jaimenms/text2ipc"
 t2ipc download {repo_id}                       # or --revision v{package_version} to pin this edition
-t2ipc classify "Aparelho para combate a incêndios com mangueira flexível" --lang {lang} --level group
+t2ipc classify "{example_text}" --lang {lang} --level group
 t2ipc classify "..." --lang {lang} --level group --rerank
 ```
 
@@ -168,6 +184,8 @@ def export_hf_repo(
     embedder_model = meta.model.split(":", 1)[1] if ":" in meta.model else meta.model
     (out / "README.md").write_text(
         MODEL_CARD.format(
+            example_input=CARD_EXAMPLES.get(lang, CARD_EXAMPLES["EN"])[0],
+            example_text=CARD_EXAMPLES.get(lang, CARD_EXAMPLES["EN"])[1],
             package_version=package_version,
             reranker_model=DEFAULT_RERANKER.partition(":")[2],
             version=version,

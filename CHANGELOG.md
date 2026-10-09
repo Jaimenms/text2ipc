@@ -10,6 +10,14 @@ reverse have their own record under `docs/adr/`; every measurement is in
 
 ## [Unreleased]
 
+### Added
+- English scheme index published as `jaimenms/text2ipc-en` (IPC 20260101), next to
+  the Portuguese and French repositories.
+
+### Fixed
+- Model cards use example texts in the language of their scheme; the French and
+  English cards showed Portuguese examples.
+
 ## [0.2.3] - 2026-10-09
 
 ### Added

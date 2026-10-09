@@ -39,7 +39,8 @@ A62C 15/00  0.853  NECESSIDADES HUMANAS > SALVAMENTO; COMBATE AO FOGO > COMBATE 
 
 The same index runs as a Hugging Face Inference Endpoint (JSON in, JSON out) from the
 repository [jaimenms/text2ipc-pt](https://huggingface.co/jaimenms/text2ipc-pt); the
-French scheme is published the same way as
+English and French schemes are published the same way as
+[jaimenms/text2ipc-en](https://huggingface.co/jaimenms/text2ipc-en) and
 [jaimenms/text2ipc-fr](https://huggingface.co/jaimenms/text2ipc-fr) (`t2ipc download
 jaimenms/text2ipc-fr`, then `--lang FR`). Scheme titles in the language of the text
 score best, so pick the scheme that matches the query.

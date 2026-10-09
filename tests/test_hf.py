@@ -18,6 +18,7 @@ def test_export_and_handler_roundtrip(mini_home, tmp_path, monkeypatch):
     card = (repo / "README.md").read_text()
     assert "pipeline_tag: text-classification" in card
     assert "| `rerank` |" in card and "`judge`" in card
+    assert 'lang="EN"' in card and "hand hoe with two blades" in card  # examples per language
     assert "base_model:\n  - hash:64\n  - BAAI/bge-reranker-v2-m3\n" in card.replace(
         "base_model:\n  - 64\n", "base_model:\n  - hash:64\n"
     )

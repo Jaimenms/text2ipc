@@ -162,6 +162,7 @@ numbers and their history are in `docs/evals.md`.
 ```bash
 scripts/publish_hf.sh --lang PT                # endpoint repo: export + upload to <you>/text2ipc-pt
 scripts/publish_hf.sh --lang FR --public       # another language: <you>/text2ipc-fr
+scripts/publish_hf.sh --lang EN --version 20260101 --public   # pin the IPC version when several are built
 scripts/publish_space.sh --version 20260101    # browser demo: PT + EN + FR, e5-base, <you>/text2ipc
 scripts/publish_space.sh --lang PT --private   # one language, private Space
 ```
@@ -173,7 +174,7 @@ pass `--model` to ship another embedder that has an ONNX twin on the Hub, for ex
 e5-small at 118 MB in the browser.
 
 **Versions.** The repository names stay fixed (`text2ipc-<lang>` for the endpoint
-repos, `text2ipc-pt` and `text2ipc-fr` today, `text2ipc` for the Space); every upload is tagged `v<package version>` on the Hub by
+repos: `text2ipc-pt`, `text2ipc-en` and `text2ipc-fr`; `text2ipc` for the Space); every upload is tagged `v<package version>` on the Hub by
 `scripts/hf_tag.sh` (`v0.2.1`, then `v0.2.1-2` for a second upload of the same
 version), so an edition can be pinned: `t2ipc download --revision v0.2.1`, or the
 `revision` of a Hub request. A release moves the `[Unreleased]` entries of
