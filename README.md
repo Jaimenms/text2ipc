@@ -49,6 +49,7 @@ repository [jaimenms/text2ipc-pt](https://huggingface.co/jaimenms/text2ipc-pt).
 | [docs/evals.md](docs/evals.md) | What it scores: every eval run with its numbers, including the experiments that were rejected |
 | [docs/adr/](docs/adr/) | Why it is built this way: one record per decision that is expensive to reverse (path text, Parquet tables, languages, eval source, distribution) |
 | [notebooks/01_text2ipc.ipynb](notebooks/01_text2ipc.ipynb) | Walk-through of the interface and an evaluation on 1,000 INPI applications, with outputs |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each version, with the measurements behind it |
 | [CLAUDE.md](CLAUDE.md) | Conventions for contributors and coding agents |
 
 ## Repository layout
@@ -56,6 +57,7 @@ repository [jaimenms/text2ipc-pt](https://huggingface.co/jaimenms/text2ipc-pt).
 ```
 .
 ├── README.md                     this file
+├── CHANGELOG.md                  per-version changes; releases are tags here and on the Hub
 ├── CLAUDE.md                     conventions, layout, commands
 ├── pyproject.toml                package metadata; `uv sync --all-extras` installs everything
 ├── src/text2ipc/

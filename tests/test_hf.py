@@ -15,7 +15,12 @@ def test_export_and_handler_roundtrip(mini_home, tmp_path, monkeypatch):
     assert (repo / "scheme" / "ipc_20260101_en.parquet").exists()
     cfg = json.loads((repo / "text2ipc.json").read_text())
     assert cfg == {"version": "20260101", "lang": "EN", "model": "hash:64"}
-    assert "pipeline_tag: text-classification" in (repo / "README.md").read_text()
+    card = (repo / "README.md").read_text()
+    assert "pipeline_tag: text-classification" in card
+    assert "| `rerank` |" in card and "`judge`" in card
+    assert "base_model:\n  - hash:64\n  - BAAI/bge-reranker-v2-m3\n" in card.replace(
+        "base_model:\n  - 64\n", "base_model:\n  - hash:64\n"
+    )
 
     monkeypatch.syspath_prepend(str(repo))
     sys.modules.pop("handler", None)

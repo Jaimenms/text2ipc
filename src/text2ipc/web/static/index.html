@@ -44,7 +44,7 @@
   .progress { display: grid; grid-template-columns: minmax(120px, 1fr) 2fr auto; gap: 10px;
               align-items: center; margin: 2px 0; }
   .bar { height: 8px; background: var(--bar); border-radius: 4px; overflow: hidden; }
-  .bar i { display: block; height: 100%; background: var(--accent); }
+  .bar i { display: block; height: 100%; background: var(--accent); transition: width .2s; }
   table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: .92rem; }
   th, td { text-align: left; vertical-align: top; padding: 8px 8px; border-bottom: 1px solid var(--line); }
   th { color: var(--muted); font-weight: 600; white-space: nowrap; }
@@ -107,7 +107,7 @@
     <label>Scheme <select id="lang"></select></label>
     <label>Level <select id="level"></select></label>
     <label>Top <input id="topk" type="number" min="1" max="50" value="5"></label>
-    <label id="rerank-label"><input id="rerank" type="checkbox"> Rerank <small>(cross-encoder, slower)</small></label>
+    <label id="rerank-label"><input id="rerank" type="checkbox"> Rerank <small>(cross-encoder, about 1 s per candidate)</small></label>
     <button id="run" type="button">Classify</button>
   </div>
   <div id="examples"></div>

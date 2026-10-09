@@ -40,7 +40,7 @@ WEB_MODELS = {
     "intfloat/multilingual-e5-large": "Xenova/multilingual-e5-large",
 }
 
-STATIC_FILES = ("index.html", "app.js", "scorer.js")
+STATIC_FILES = ("index.html", "app.js", "scorer.js", "rerank-worker.js")
 
 #: Token limit the browser applies before chunking a long text (sentence-transformers
 #: ``max_seq_length`` of the model); e5 models take 512.

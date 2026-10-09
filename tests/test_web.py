@@ -31,7 +31,14 @@ def test_export_layout(mini_home, tmp_path):
     out = export_web_demo(
         tmp_path / "space", model="hash:64", langs=["EN"], root=mini_home, web_model="test/model"
     )
-    for name in ("index.html", "app.js", "scorer.js", "README.md", "manifest.json"):
+    for name in (
+        "index.html",
+        "app.js",
+        "scorer.js",
+        "rerank-worker.js",
+        "README.md",
+        "manifest.json",
+    ):
         assert (out / name).exists(), name
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["web_model"] == "test/model" and manifest["dim"] == 64

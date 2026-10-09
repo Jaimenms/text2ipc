@@ -17,8 +17,10 @@ similarity of that entry to the text, and the edge into a result carries its sco
 Hovering or focusing an edge or node shows the entry's title. The table below the
 tree lists the same results with their full path text. "Rerank" loads a second
 model once (`jinaai/jina-reranker-v2-base-multilingual`, 280 MB in 8 bits) and
-re-judges the top 25 candidates against the text; it takes some seconds per query
-in the browser and adds a Judge column. That model is licensed CC BY-NC 4.0
+re-judges the top 25 candidates against the text when you click Classify; it runs
+in a Web Worker with a progress bar, about a second per candidate, and adds a Judge
+column. Nothing runs by itself: the example buttons and a `?q=` link only fill the
+text box. That model is licensed CC BY-NC 4.0
 (non-commercial), which suits a demo; the package's default reranker
 (`BAAI/bge-reranker-v2-m3`) is Apache-2.0. The example buttons are real
 applications from `evals/demo_examples.jsonl` (title plus abstract, with the symbols

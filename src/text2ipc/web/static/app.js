@@ -2,12 +2,7 @@
 // embedder with transformers.js, embed the query, rank with scorer.js, and draw the
 // merged paths of the results as a tree. Everything stays in the visitor's browser;
 // no request carries the text anywhere.
-import {
-  AutoTokenizer,
-  XLMRobertaModel,
-  env,
-  pipeline,
-} from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1";
+import { env, pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1";
 import {
   AUTO_LEVEL,
   LEVELS,
@@ -52,8 +47,9 @@ const state = {
   indexLoads: new Map(), // lang -> promise of the load in flight (clicks during loading reuse it)
   embedder: null,
   embedderLoad: null, // promise of the model load in flight
-  reranker: null, // {tokenizer, model} once loaded
-  rerankerLoad: null,
+  rerankWorker: null, // Web Worker running the cross-encoder, created on first use
+  rerankRequests: new Map(), // request id -> {resolve, reject}
+  rerankSeq: 0,
   progress: new Map(), // label -> {loaded, total}
   pending: 0, // loads in flight that have not reported progress yet
   error: null,
@@ -84,6 +80,11 @@ function fmtMB(bytes) {
   return `${(bytes / 1e6).toFixed(bytes < 10e6 ? 1 : 0)} MB`;
 }
 
+function fmtProgress({ loaded, total, unit }) {
+  if (unit === "pairs") return `${loaded} / ${total} pairs`;
+  return total ? `${fmtMB(loaded)} / ${fmtMB(total)}` : fmtMB(loaded);
+}
+
 function renderStatus(message) {
   ui.status.innerHTML = "";
   if (state.error) {
@@ -97,19 +98,20 @@ function renderStatus(message) {
       message || (state.pending ? "Loading…" : "Ready. Everything runs in this browser tab.");
     return;
   }
-  for (const [label, { loaded, total }] of state.progress) {
+  for (const [label, entry] of state.progress) {
+    const { loaded, total } = entry;
     const row = document.createElement("div");
     row.className = "progress";
     const pct = total ? Math.min(100, Math.round((100 * loaded) / total)) : 0;
     row.innerHTML = `<span></span><div class="bar"><i style="width:${pct}%"></i></div><small></small>`;
     row.querySelector("span").textContent = label;
-    row.querySelector("small").textContent = total ? `${fmtMB(loaded)} / ${fmtMB(total)}` : fmtMB(loaded);
+    row.querySelector("small").textContent = fmtProgress(entry);
     ui.status.appendChild(row);
   }
 }
 
-function setProgress(label, loaded, total) {
-  state.progress.set(label, { loaded, total });
+function setProgress(label, loaded, total, unit) {
+  state.progress.set(label, { loaded, total, unit });
   renderStatus();
 }
 
@@ -214,75 +216,61 @@ function loadEmbedder() {
   return state.embedderLoad;
 }
 
-function loadReranker() {
-  if (state.reranker) return Promise.resolve(state.reranker);
-  if (!state.rerankerLoad) {
+/** The reranker runs in a Web Worker (rerank-worker.js) so the page keeps painting. */
+function rerankWorker() {
+  if (!state.rerankWorker) {
+    const worker = new Worker("rerank-worker.js", { type: "module" });
     const { web_model: model, dtype } = state.manifest.reranker;
-    const label = `reranker ${model} (${dtype})`;
-    const progress = (e) => {
-      if (e.status === "progress" && e.file && e.file.endsWith(".onnx")) {
-        setProgress(label, e.loaded, e.total);
+    const loadLabel = `reranker ${model} (${dtype})`;
+    const judgeLabel = "judging candidates";
+    worker.onmessage = (e) => {
+      const m = e.data;
+      if (m.type === "progress") setProgress(loadLabel, m.loaded, m.total);
+      else if (m.type === "ready") doneProgress(loadLabel);
+      else if (m.type === "judging") setProgress(judgeLabel, m.done, m.total, "pairs");
+      else if (m.id !== undefined && state.rerankRequests.has(m.id)) {
+        const { resolve, reject } = state.rerankRequests.get(m.id);
+        state.rerankRequests.delete(m.id);
+        doneProgress(loadLabel);
+        doneProgress(judgeLabel);
+        if (m.type === "error") reject(new Error(m.message));
+        else resolve(m);
       }
     };
-    // jina's config carries no model_type, so the class is named, as its model card does
-    const t0 = performance.now();
-    const stage = (what) => console.info(`reranker: ${what} at ${Math.round(performance.now() - t0)} ms`);
-    const load = async () => {
-      const tokenizer = await AutoTokenizer.from_pretrained(model);
-      stage("tokenizer ready");
-      const m = await XLMRobertaModel.from_pretrained(model, { dtype, progress_callback: progress });
-      stage("model ready");
-      return [tokenizer, m];
+    worker.onerror = (e) => {
+      for (const { reject } of state.rerankRequests.values()) reject(new Error(e.message || "reranker worker failed"));
+      state.rerankRequests.clear();
+      doneProgress(loadLabel);
+      doneProgress(judgeLabel);
     };
-    state.pending += 1;
-    state.rerankerLoad = load()
-      .catch((err) => {
-        // Some browsers cannot store a 280 MB response in the Cache API and the
-        // loader fails with a network error; retry without the cache.
-        console.warn("reranker load failed, retrying without the browser cache", err);
-        env.useBrowserCache = false;
-        return load().finally(() => {
-          env.useBrowserCache = true;
-        });
-      })
-      .then(([tokenizer, m]) => {
-        state.reranker = { tokenizer, model: m };
-        return state.reranker;
-      })
-      .catch((err) => {
-        state.rerankerLoad = null;
-        throw err;
-      })
-      .finally(() => {
-        state.pending -= 1;
-        doneProgress(label);
-      });
+    state.rerankWorker = worker;
   }
-  return state.rerankerLoad;
+  return state.rerankWorker;
 }
 
-/** Cross-encoder logits for (text, path text) pairs, a few pairs at a time. */
+function askWorker(message) {
+  const worker = rerankWorker();
+  const id = ++state.rerankSeq;
+  return new Promise((resolve, reject) => {
+    state.rerankRequests.set(id, { resolve, reject });
+    worker.postMessage({ id, ...message });
+  });
+}
+
+/** Cross-encoder logits for (text, path text) pairs; progress shows in the status. */
 async function judge(text, matches) {
-  const { tokenizer, model } = await loadReranker();
-  const { max_length: maxLength } = state.manifest.reranker;
-  const logits = [];
-  const batch = 4;
-  const t0 = performance.now();
-  for (let i = 0; i < matches.length; i += batch) {
-    const part = matches.slice(i, i + batch);
-    const inputs = tokenizer(part.map(() => text), {
-      text_pair: part.map((m) => m.text),
-      padding: true,
-      truncation: true,
-      max_length: maxLength,
-    });
-    const out = await model(inputs);
-    const data = out.logits.data;
-    for (let j = 0; j < part.length; j++) logits.push(Number(data[j]));
-    renderStatus(`Judging candidates ${Math.min(i + batch, matches.length)}/${matches.length}…`);
-    console.info(`reranker: judged ${logits.length}/${matches.length} at ${Math.round(performance.now() - t0)} ms`);
-  }
-  return logits;
+  const { web_model: modelId, dtype, max_length: maxLength } = state.manifest.reranker;
+  setProgress("judging candidates", 0, matches.length, "pairs");
+  const reply = await askWorker({
+    type: "judge",
+    modelId,
+    dtype,
+    text,
+    texts: matches.map((m) => m.text),
+    maxLength,
+    batch: 4,
+  });
+  return reply.logits;
 }
 
 /**
@@ -350,6 +338,7 @@ async function classifyOnce() {
     const t2 = performance.now();
     let judged = "";
     if (rerank && matches.length) {
+      renderStatus();
       const logits = await judge(text, matches);
       matches = rerankMatches(matches, logits, state.manifest.reranker.fusion, topK);
       judged = ` · judged ${logits.length} in ${Math.round(performance.now() - t2)} ms`;
@@ -700,9 +689,9 @@ function renderExamples() {
     b.textContent = ex.title.length > 56 ? `${ex.title.slice(0, 56)}…` : ex.title;
     b.title = `${ex.abstract.slice(0, 160)}…  INPI: ${ex.ipc.map(formatSymbol).join(", ")}`;
     b.addEventListener("click", () => {
-      ui.text.value = exampleText(ex);
+      ui.text.value = exampleText(ex); // filled in only; Classify runs it
       state.gold = ex;
-      classify();
+      ui.text.focus();
     });
     ui.examples.appendChild(b);
   }
@@ -727,7 +716,7 @@ async function main() {
   fillSelect(ui.level, [AUTO_LEVEL, ...LEVELS]);
   ui.level.value = "group";
   if (!m.reranker) ui.rerankLabel.hidden = true;
-  else ui.rerankLabel.title = `${m.reranker.web_model} (${m.reranker.dtype}) re-judges the top ${m.reranker.candidates}; 280 MB once, then some seconds per query`;
+  else ui.rerankLabel.title = `${m.reranker.web_model} (${m.reranker.dtype}) re-judges the top ${m.reranker.candidates} when you click Classify; 280 MB once, then about a second per candidate`;
   await loadExamples();
   renderExamples();
 
@@ -741,16 +730,12 @@ async function main() {
   if (params.get("q")) ui.text.value = params.get("q");
 
   ui.run.addEventListener("click", classify);
-  ui.text.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) classify();
-  });
   ui.lang.addEventListener("change", () => loadIndex(entryFor(ui.lang.value)).catch(fail));
   window.addEventListener("scroll", hideTip, { passive: true });
 
   try {
     await Promise.all([loadIndex(entryFor(ui.lang.value)), loadEmbedder()]);
-    renderStatus();
-    if (ui.text.value.trim()) classify();
+    renderStatus(); // nothing runs until Classify is clicked
   } catch (err) {
     fail(err);
   }

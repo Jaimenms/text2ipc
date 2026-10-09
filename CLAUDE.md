@@ -67,6 +67,9 @@ installed users. Prebuilt indexes are published to the Hugging Face Hub with
 - Any new heuristic needs: a doc section, a parameter with a default, a test on the
   mini scheme, and an eval run before and after on both `evals/rpi_*.jsonl` files,
   with the numbers appended to `docs/evals.md`.
+- Every user-visible change gets a line under `[Unreleased]` in `CHANGELOG.md`; a
+  release moves them under a version heading, bumps `pyproject.toml` and
+  `__version__`, and tags git and the Hub repositories (`scripts/hf_tag.sh`).
 - The browser demo scores with `src/text2ipc/web/static/scorer.js`, a port of
   `search/scorer.py` (ADR 0007). A change to the scorer is finished only when the port
   matches and `tests/test_web.py` (Node parity on the mini scheme) still passes.
